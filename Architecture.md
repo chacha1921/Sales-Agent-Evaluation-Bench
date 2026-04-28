@@ -169,7 +169,15 @@ All inputs are **read-only seeds**. Nothing from Week 10 artifacts is committed 
                     │    cosine < 0.85 (cheap embedding model) │
                     │                                          │
                     │  Check 3: Time-shift verification        │
-                    │    public data from documentable window  │
+                    │    For every task referencing public     │
+                    │    data (Crunchbase, layoffs.fyi), the   │
+                    │    task metadata MUST include:           │
+                    │      signal_source: "crunchbase_odm"     │
+                    │      signal_time_window: "2023-Q3"       │
+                    │    A script verifies this field is       │
+                    │    populated and matches a documented    │
+                    │    real data window — LLM-generated      │
+                    │    placeholder signals fail this check   │
                     └──────────────┬───────────────────────────┘
                                    │
                                    ▼
@@ -186,7 +194,8 @@ All inputs are **read-only seeds**. Nothing from Week 10 artifacts is committed 
 - Hand-label 30 tasks cold
 - Re-label same 30 tasks 24 hours later, without seeing first labels
 - Compute agreement matrix per rubric dimension
-- If any dimension < 80% → revise rubric → re-label → repeat
+- **Trigger condition (non-negotiable):** If any rubric dimension scores below 80% agreement → revise that dimension's rubric → re-label the full 30-task subset → repeat until all dimensions pass
+- The final agreement matrix (per-dimension %, revision log, iteration count) **must be committed to `methodology.md`** as a primary quality signal — not just to `inter_rater_agreement.md`
 
 ---
 
@@ -224,6 +233,8 @@ Each task in `tasks.jsonl` follows this structure:
     "adversarial_weight": 1.0,
     "generation_model": "qwen3-next-80b",
     "judge_scores": {"input_coherence": 4, "ground_truth_verifiability": 5, "rubric_clarity": 4},
+    "signal_source": "crunchbase_odm | layoffs_fyi | tenacious_deck | synthetic",
+    "signal_time_window": "2023-Q3",
     "created_at": "2026-04-28"
   }
 }
@@ -286,6 +297,12 @@ Choose **one path** only. Justify in `methodology_rationale.md` with ≥3 Week 1
 │  Runtime: Google Colab T4 (free) or RunPod 4090 ($0.34/hr)│
 │  Budget cap: $5 for training                           │
 │                                                         │
+│  PRECISION RULE (hardware-dependent, non-negotiable):  │
+│  • T4 (Colab):        fp16  LoRA                       │
+│  • 4090 / L4 (RunPod): bf16 LoRA                       │
+│  4-bit QLoRA is NOT used for this benchmark.           │
+│  Set dtype explicitly in Unsloth FastLanguageModel.    │
+│                                                         │
 │  Path A — SFT Input Format:                            │
 │  {"messages": [                                         │
 │    {"role": "system", "content": "..."},               │
@@ -295,13 +312,21 @@ Choose **one path** only. Justify in `methodology_rationale.md` with ≥3 Week 1
 │                                                         │
 │  Path B — DPO Input Format:                            │
 │  {"prompt": task_input,                                 │
-│   "chosen": high_score_output,                          │
-│   "rejected": low_score_output}                         │
+│   "chosen": hand_fixed_or_high_scoring_rewrite,         │
+│   "rejected": week10_probe_triggered_failure}           │
+│  Volume: ~1k–2k pairs                                  │
+│  Source rule:                                           │
+│    rejected  ← Week 10 probe-triggered failure traces  │
+│    chosen    ← human hand-fix or scorer-top-5 rewrite  │
+│  Never use the same LLM to rewrite chosen and score it │
 │                                                         │
-│  Path C — PRM Input Format:                            │
+│  Path C — PRM Input Format (Source2Synth pattern):     │
 │  {"trajectory": [step1, step2, ...stepN],               │
 │   "step_scores": [0.8, 0.6, 0.2, ...],                 │
-│   "outcome_score": 0.3}                                 │
+│   "outcome_score": 0.3,                                 │
+│   "annotation_method": "source2synth"}                  │
+│  Each step annotated: was this step locally good       │
+│  but globally harmful? Score per step, not per output. │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -347,8 +372,16 @@ Day 5 Morning:
                         │   bootstrap 95% CI │
                         │                    │
                         │  Delta B:          │
-                        │   Trained vs       │
-                        │   Prompt-eng       │
+                        │   Trained LoRA vs  │
+                        │   SAME backbone +  │
+                        │   advanced prompt  │
+                        │   (no adapter)     │
+                        │   CONSTRAINT: if   │
+                        │   you train Qwen   │
+                        │   3.5 2B LoRA,     │
+                        │   Delta B baseline │
+                        │   = base Qwen 3.5  │
+                        │   2B + best prompt │
                         │   → report honestly│
                         │   (negative = OK,  │
                         │    publishable)    │
@@ -435,8 +468,20 @@ Publishing Artifacts
 │   └── Section 5: What's Next
 │
 ├── memo.pdf (2 pages)
-│   ├── Page 1: Decision memo (headline lift, cost delta, recommendation)
-│   └── Page 2: Skeptic's appendix (4 failure modes, kill-switch condition)
+│   ├── Page 1: Decision memo
+│   │   ├── Headline lift (Delta A score + CI)
+│   │   ├── Cost delta ($/task with vs without trained component)
+│   │   └── Deployment recommendation — must be exactly ONE of:
+│   │         "Deploy" | "Deploy with caveat" | "Do not deploy"
+│   └── Page 2: Skeptic's appendix
+│       ├── 4 failure modes not captured by the bench
+│       ├── Ground truth lossiness assessment
+│       ├── One unresolved failure from held-out traces
+│       └── Kill-switch trigger condition:
+│             A specific numeric threshold (e.g., "if held-out
+│             score drops below 2.8/5.0 on any weekly re-eval
+│             OR Delta A CI crosses zero, auto-deactivate the
+│             trained component and revert to Week 10 baseline")
 │
 └── Community Engagement (one of):
     ├── GitHub issue/discussion on τ²-Bench repo

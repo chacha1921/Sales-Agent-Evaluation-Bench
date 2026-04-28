@@ -1,0 +1,29 @@
+# Core
+anthropic>=0.40.0
+openai>=1.50.0
+datasets>=2.20.0
+huggingface_hub>=0.24.0
+transformers>=4.44.0
+peft>=0.12.0
+
+# Training
+unsloth>=2024.9
+trl>=0.10.0
+torch>=2.3.0
+accelerate>=0.33.0
+
+# Evaluation
+numpy>=1.26.0
+scipy>=1.13.0
+scikit-learn>=1.5.0
+nltk>=3.9.0
+sentence-transformers>=3.0.0
+
+# Observability
+langfuse>=2.25.0
+
+# Utilities
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+jsonlines>=4.0.0
+pandas>=2.2.0

@@ -1,1 +1,33 @@
 /docs
+
+# Sealed held-out partition — never push after sealing
+dataset/tenacious_bench_v0.1/held_out/
+
+# Environment
+.env
+.env.local
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Training artifacts (large files)
+training/training_data/path_a_sft/*.jsonl
+training/training_data/path_b_dpo/*.jsonl
+training/training_data/path_c_prm/*.jsonl
+*.safetensors
+*.bin
+*.pt
+
+# Logs
+*.log
+wandb/
+runs/
+
+# IDE
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
