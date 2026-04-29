@@ -1,0 +1,253 @@
+{
+  "_schema_version": "0.1",
+  "_description": "Tenacious-Bench v0.1 task schema. Every checker_fn returns float [0,1] with no human in the loop. Aggregate = weighted_sum * 5 on scale [0,5].",
+  "_binding_constraint": "A rubric dimension is only valid if its checker_fn can be called by scoring_evaluator.py and returns a deterministic numeric score.",
+
+  "task_schema": {
+    "task_id": "string — TB-NNN",
+    "split": "train | dev | held_out",
+    "authoring_mode": "trace_derived | programmatic | multi_llm | adversarial",
+    "source_trace_ids": "list[string] — Week 10 trace IDs this task was derived from (empty for programmatic/multi_llm)",
+    "difficulty": "easy | medium | hard — stratification for reporting",
+    "input": {
+      "context": "string — prospect profile, verified signals, prior thread if any",
+      "task_type": "email_outreach | discovery_response | objection_handling | closing | follow_up",
+      "constraints": "list[string] — all hard constraints the output must satisfy"
+    },
+    "candidate_output": "string — populated at eval time by the agent under test",
+    "ground_truth": {
+      "type": "rubric",
+      "dimensions": {
+        "<dim_name>": {
+          "weight": "float — all weights must sum to 1.0",
+          "checker": "string — exact function name in scoring_evaluator.py",
+          "description": "string — what this dimension measures and why it is machine-verifiable"
+        }
+      },
+      "aggregate": "weighted_sum",
+      "scale": "0.0 to 5.0",
+      "passing_threshold": "float — minimum aggregate score to count as PASS"
+    },
+    "metadata": {
+      "tenacious_segment": "series_b | enterprise | smb",
+      "failure_mode_tag": "tone_drift | formulaic | trajectory | signal_missing | cta_missing | constraint_violation",
+      "adversarial_weight": "float — 1.0 for adversarial tasks, 0.5 for all others",
+      "generation_model": "string — model that authored this task",
+      "judge_model": "string — model used to filter this task (must differ from generation_model)",
+      "judge_scores": {
+        "input_coherence": "int 1-5",
+        "ground_truth_verifiability": "int 1-5",
+        "rubric_clarity": "int 1-5"
+      },
+      "signal_source": "crunchbase_odm | layoffs_fyi | tenacious_deck | linkedin | synthetic",
+      "signal_time_window": "string | null — e.g. '2023-Q2'. Required if signal_source != synthetic",
+      "created_at": "ISO date string"
+    }
+  },
+
+  "example_tasks": [
+    {
+      "task_id": "TB-001",
+      "split": "dev",
+      "authoring_mode": "trace_derived",
+      "source_trace_ids": ["trace_042"],
+      "difficulty": "medium",
+      "input": {
+        "context": "Prospect: Sarah Chen, VP of Revenue at Lattice (Series C SaaS, 210 employees). Crunchbase: $45M Series C closed 2023-Q2. LinkedIn post 3 days ago: 'Sales rep ramp time is killing our Q3 targets. Anyone solved this at scale?' No prior contact with Tenacious.",
+        "task_type": "email_outreach",
+        "constraints": [
+          "under 120 words",
+          "no competitor names",
+          "include Calendly link placeholder [CALENDLY_LINK]",
+          "reference the LinkedIn signal or funding round explicitly",
+          "do not mention pricing"
+        ]
+      },
+      "candidate_output": "",
+      "ground_truth": {
+        "type": "rubric",
+        "dimensions": {
+          "signal_grounding": {
+            "weight": 0.30,
+            "checker": "signal_grounding_fn",
+            "description": "Output references at least one verifiable signal present in the context (LinkedIn post, funding round, headcount). Checked via regex + named-entity overlap against context string."
+          },
+          "tone_compliance": {
+            "weight": 0.25,
+            "checker": "tone_checker_fn",
+            "description": "LLM-judge scores output on 5 Tenacious tone markers (direct, signal-led, non-pushy, concise, human) 1-5 each. Normalised to [0,1]. Deterministic seed required."
+          },
+          "banned_phrase_absent": {
+            "weight": 0.15,
+            "checker": "banned_phrase_fn",
+            "description": "Output contains zero phrases from dataset/banned_phrases.txt. Returns 1.0 if clean, 0.0 if any match found."
+          },
+          "cta_present": {
+            "weight": 0.15,
+            "checker": "cta_checker_fn",
+            "description": "Output contains a calendar link, [CALENDLY_LINK] placeholder, or explicit booking language (regex). Returns 1.0 or 0.0."
+          },
+          "word_count_within_limit": {
+            "weight": 0.15,
+            "checker": "word_count_fn",
+            "description": "Output is under 120 words. Returns 1.0 if within limit, proportional penalty if over."
+          }
+        },
+        "aggregate": "weighted_sum",
+        "scale": "0.0 to 5.0",
+        "passing_threshold": 3.5
+      },
+      "metadata": {
+        "tenacious_segment": "series_b",
+        "failure_mode_tag": "signal_missing",
+        "adversarial_weight": 0.5,
+        "generation_model": "trace_derived",
+        "judge_model": "claude-haiku-4-5-20251001",
+        "judge_scores": {
+          "input_coherence": 5,
+          "ground_truth_verifiability": 5,
+          "rubric_clarity": 5
+        },
+        "signal_source": "crunchbase_odm",
+        "signal_time_window": "2023-Q2",
+        "created_at": "2026-04-29"
+      }
+    },
+    {
+      "task_id": "TB-002",
+      "split": "dev",
+      "authoring_mode": "programmatic",
+      "source_trace_ids": [],
+      "difficulty": "hard",
+      "input": {
+        "context": "Prospect: Mark Rivera, Head of Sales Ops at Meridian SaaS (500 employees, Enterprise tier). Discovery call completed 2 days ago. Mark said: 'We already have a solution for sales tracking.' layoffs.fyi shows Meridian cut 15% of RevOps headcount last month. Budget cycle closes end of Q2.",
+        "task_type": "objection_handling",
+        "constraints": [
+          "under 100 words",
+          "acknowledge the objection before pivoting",
+          "reference the RevOps restructuring signal without being presumptuous",
+          "do not mention pricing",
+          "include a specific next step"
+        ]
+      },
+      "candidate_output": "",
+      "ground_truth": {
+        "type": "rubric",
+        "dimensions": {
+          "signal_grounding": {
+            "weight": 0.25,
+            "checker": "signal_grounding_fn",
+            "description": "References the RevOps headcount reduction or restructuring signal from context."
+          },
+          "objection_acknowledged": {
+            "weight": 0.25,
+            "checker": "objection_ack_fn",
+            "description": "LLM-judge binary check: does the output acknowledge the objection before any counter-argument? Returns 1.0 (YES) or 0.0 (NO)."
+          },
+          "tone_compliance": {
+            "weight": 0.25,
+            "checker": "tone_checker_fn",
+            "description": "Tenacious tone markers: direct, non-pushy, human. Score normalised to [0,1]."
+          },
+          "word_count_within_limit": {
+            "weight": 0.15,
+            "checker": "word_count_fn",
+            "description": "Under 100 words."
+          },
+          "banned_phrase_absent": {
+            "weight": 0.10,
+            "checker": "banned_phrase_fn",
+            "description": "Zero banned phrases from banned_phrases.txt."
+          }
+        },
+        "aggregate": "weighted_sum",
+        "scale": "0.0 to 5.0",
+        "passing_threshold": 3.0
+      },
+      "metadata": {
+        "tenacious_segment": "enterprise",
+        "failure_mode_tag": "trajectory",
+        "adversarial_weight": 0.5,
+        "generation_model": "template_expansion",
+        "judge_model": "claude-haiku-4-5-20251001",
+        "judge_scores": {
+          "input_coherence": 5,
+          "ground_truth_verifiability": 4,
+          "rubric_clarity": 5
+        },
+        "signal_source": "layoffs_fyi",
+        "signal_time_window": "2026-Q1",
+        "created_at": "2026-04-29"
+      }
+    },
+    {
+      "task_id": "TB-003",
+      "split": "dev",
+      "authoring_mode": "adversarial",
+      "source_trace_ids": ["trace_212", "trace_315"],
+      "difficulty": "hard",
+      "input": {
+        "context": "Prospect: James Park, CEO of a bootstrapped 12-person marketing agency (SMB). No VC funding, no Crunchbase entry. Only available signal: LinkedIn job posting for 'Head of Sales' posted 2 days ago. James has not interacted with Tenacious before. Tenacious SMB tier: $800/yr per seat — DO NOT MENTION.",
+        "task_type": "email_outreach",
+        "constraints": [
+          "under 80 words",
+          "must reference the Head of Sales job posting signal explicitly",
+          "must NOT mention pricing, cost, or dollar amounts",
+          "must NOT use the word 'leverage'",
+          "must NOT use the word 'synergy' or any variant",
+          "must end with a specific question, not a vague offer",
+          "include [CALENDLY_LINK] placeholder"
+        ]
+      },
+      "candidate_output": "",
+      "ground_truth": {
+        "type": "rubric",
+        "dimensions": {
+          "signal_grounding": {
+            "weight": 0.30,
+            "checker": "signal_grounding_fn",
+            "description": "Output explicitly references the Head of Sales job posting. Regex match for 'head of sales' OR 'hiring' OR 'job posting' in output."
+          },
+          "pricing_absent": {
+            "weight": 0.25,
+            "checker": "pricing_mention_fn",
+            "description": "Output contains no pricing, dollar amounts, or cost references. Returns 1.0 if clean, 0.0 otherwise."
+          },
+          "banned_phrase_absent": {
+            "weight": 0.20,
+            "checker": "banned_phrase_fn",
+            "description": "No banned phrases. This task is adversarial: the model is specifically tempted to use 'leverage' and 'synergy'."
+          },
+          "cta_present": {
+            "weight": 0.10,
+            "checker": "cta_checker_fn",
+            "description": "Contains [CALENDLY_LINK] or explicit calendar booking language."
+          },
+          "word_count_within_limit": {
+            "weight": 0.15,
+            "checker": "word_count_fn",
+            "description": "Under 80 words. Tight constraint designed to test concision under signal-grounding pressure."
+          }
+        },
+        "aggregate": "weighted_sum",
+        "scale": "0.0 to 5.0",
+        "passing_threshold": 3.5
+      },
+      "metadata": {
+        "tenacious_segment": "smb",
+        "failure_mode_tag": "tone_drift",
+        "adversarial_weight": 1.0,
+        "generation_model": "claude-sonnet-4-6",
+        "judge_model": "claude-haiku-4-5-20251001",
+        "judge_scores": {
+          "input_coherence": 5,
+          "ground_truth_verifiability": 5,
+          "rubric_clarity": 5
+        },
+        "signal_source": "synthetic",
+        "signal_time_window": null,
+        "created_at": "2026-04-29"
+      }
+    }
+  ]
+}
