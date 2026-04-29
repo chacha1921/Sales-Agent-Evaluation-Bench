@@ -1,0 +1,33 @@
+{
+  "timestamp": "2026-04-29T14:14:13.394335Z",
+  "total_tasks": 200,
+  "partition": {
+    "train": 99,
+    "dev": 63,
+    "held_out": 38
+  },
+  "all_checks_passed": true,
+  "checks": {
+    "1_ngram_overlap": {
+      "check": "ngram_overlap",
+      "n": 8,
+      "status": "PASS",
+      "violations": 0,
+      "violation_details": [],
+      "held_out_tasks_checked": 38,
+      "train_dev_ngrams_indexed": 1944
+    },
+    "2_embedding_similarity": {
+      "check": "embedding_similarity",
+      "status": "SKIPPED",
+      "reason": "--skip-embedding flag set"
+    },
+    "3_time_shift_verification": {
+      "check": "time_shift_verification",
+      "status": "PASS",
+      "public_signal_tasks": 93,
+      "missing_time_window": 0,
+      "violation_details": []
+    }
+  }
+}
