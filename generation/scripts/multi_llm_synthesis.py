@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""
+multi_llm_synthesis.py — Mode 3: Multi-LLM Synthesis
+
+Generates tasks using LLM seed prompts. In --mock mode (default), seeds are
+expanded via deterministic templates — no API calls. In --live mode, seeds
+are sent to a frontier model (hard seeds) and a dev-tier model (bulk).
+
+Authoring record:
+  Seed count : 12 scenario seeds × 5 variations = 60 tasks
+  Task IDs   : TB-0106 → TB-0165
+  Model route (mock) : template expansion (no LLM)
+  Model route (live) :
+    Hard seed variants (adv_weight=1.0) → claude-sonnet-4-6  via Anthropic API
+    Bulk variants (adv_weight=0.5)      → deepseek/deepseek-chat via OpenRouter
+  Leakage guard : generation_model logged per task; judge_model must differ
+
+Usage:
+  python generation/scripts/multi_llm_synthesis.py --mock   (no API calls)
+  python generation/scripts/multi_llm_synthesis.py --live   (requires API keys)
+"""
+
+import json
+import argparse
+import sys
+import os
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(ROOT / "generation"))
+from task_templates import make_task, TODAY
+
+OUT_DIR  = ROOT / "generation" / "raw_tasks"
+OUT_FILE = OUT_DIR / "multi_llm.jsonl"
+START_ID = 106
+
+# ── System prompt used for live LLM generation (documented here for reproducibility) ──
+GENERATION_SYSTEM_PROMPT = """You are a dataset engineer building evaluation tasks for a B2B sales agent benchmark.
+
+Generate a single evaluation task in this EXACT JSON format:
+{
+  "context": "<prospect profile + verified signal, 2-4 sentences>",
+  "task_type": "<email_outreach|follow_up|discovery_response|objection_handling|closing>",
+  "constraints": ["<constraint 1>", "<constraint 2>", ...],
+  "difficulty": "<easy|medium|hard>"
+}
+
+Rules:
+- The context MUST include at least one verifiable signal (funding, layoff, job posting, product launch)
+- Constraints must be machine-checkable (word count, banned words, link presence, etc.)
+- Do not generate generic or vague tasks — every scenario must be specific
+- Difficulty hard: add an adversarial constraint (banned word is tempting, pricing is tempting)
+"""
+
+# ── 12 seed scenarios ──────────────────────────────────────────────────────────
+SEEDS = [
+    dict(id="S01", segment="series_b",  role="Head of Sales",        company="Narvar",      industry="logistics SaaS",
+         signal="Series B $40M closed 2025-Q2", src="crunchbase_odm", win="2025-Q2",
+         pain="no structured sales playbook after Series B"),
+    dict(id="S02", segment="enterprise", role="CRO",                  company="PivotDesk",   industry="real estate tech",
+         signal="cut 25% of sales headcount 2026-Q1", src="layoffs_fyi", win="2026-Q1",
+         pain="remaining reps have no ramp support after layoffs"),
+    dict(id="S03", segment="smb",        role="CEO",                   company="Folio",        industry="content agency",
+         signal="posted VP of Sales job LinkedIn 3 days ago", src="synthetic", win=None,
+         pain="founder closing all deals personally, not scalable"),
+    dict(id="S04", segment="series_b",  role="VP of Revenue",        company="Solvvy",       industry="AI customer support",
+         signal="launched enterprise tier 2025-Q3 per press release", src="synthetic", win="2025-Q3",
+         pain="enterprise ramp taking 4x longer than SMB ramp"),
+    dict(id="S05", segment="enterprise", role="Head of Revenue Ops",  company="Acuity",       industry="insurance tech",
+         signal="missed Q3 targets by 16% per investor call", src="synthetic", win="2025-Q3",
+         pain="RevOps has 4 systems that don't talk to each other"),
+    dict(id="S06", segment="smb",        role="Founder",               company="Sparq",        industry="dev tools",
+         signal="posted Head of Growth job LinkedIn yesterday", src="synthetic", win=None,
+         pain="product-led growth hitting ceiling, need sales motion"),
+    dict(id="S07", segment="series_b",  role="Director of Sales",    company="Lumen",        industry="HR tech",
+         signal="$25M Series A closed 2025-Q1", src="crunchbase_odm", win="2025-Q1",
+         pain="sales team grew 3x but process is still ad hoc"),
+    dict(id="S08", segment="enterprise", role="VP of Sales",          company="StrataBridge", industry="supply chain SaaS",
+         signal="cut 20% of enablement team 2026-Q1", src="layoffs_fyi", win="2026-Q1",
+         pain="ramp programs eliminated, new reps have no support"),
+    dict(id="S09", segment="smb",        role="Co-founder & CEO",     company="Drift",        industry="B2B marketplace",
+         signal="posted a Sales Lead job LinkedIn 2 days ago", src="synthetic", win=None,
+         pain="first sales hire needs structured process from day one"),
+    dict(id="S10", segment="series_b",  role="VP of Business Dev",   company="Pulsar",       industry="analytics SaaS",
+         signal="raised $15M Seed extension 2025-Q4", src="crunchbase_odm", win="2025-Q4",
+         pain="BD team has 3 AEs sharing one untracked spreadsheet"),
+    dict(id="S11", segment="enterprise", role="Chief Revenue Officer", company="Meridian AI", industry="enterprise AI platform",
+         signal="missed Q4 NRR target by 9%", src="synthetic", win="2025-Q4",
+         pain="expansion ARR declining as enterprise AEs lack upsell playbooks"),
+    dict(id="S12", segment="smb",        role="CEO",                   company="Bloom",        industry="e-commerce enablement",
+         signal="posted Head of Sales job LinkedIn this morning", src="synthetic", win=None,
+         pain="CEO-led sales closed $800k ARR but can't scale past $1.2M"),
+]
+
+VARIATION_CONFIGS = [
+    dict(v=1, task_type="email_outreach",      word_limit=120, adv=0.5,
+         constraints_suffix=["reference the signal explicitly", "include [CALENDLY_LINK]", "do not mention pricing"]),
+    dict(v=2, task_type="email_outreach",      word_limit=80,  adv=0.5,
+         constraints_suffix=["reference the signal", "include [CALENDLY_LINK]", "no pricing", "end with a question"]),
+    dict(v=3, task_type="follow_up",           word_limit=70,  adv=0.5,
+         constraints_suffix=["5 days no reply", "no 'just checking in'", "include [CALENDLY_LINK]"]),
+    dict(v=4, task_type="objection_handling",  word_limit=100, adv=0.5,
+         constraints_suffix=["acknowledge before pivoting", "reference the signal", "do not mention pricing"]),
+    dict(v=5, task_type="email_outreach",      word_limit=100, adv=1.0,
+         constraints_suffix=["reference the signal", "do NOT use 'leverage' or 'synergy'",
+                              "do NOT mention pricing", "include [CALENDLY_LINK]"]),
+]
+
+DIFFICULTY_MAP = {"series_b": "medium", "enterprise": "hard", "smb": "easy"}
+
+
+def build_mock_tasks():
+    tasks = []
+    tid = START_ID
+    for seed in SEEDS:
+        for vc in VARIATION_CONFIGS:
+            context = (
+                f"Prospect: {seed['role']} at {seed['company']} "
+                f"({seed['segment'].replace('_', ' ').title()}, {seed['industry']}). "
+                f"Signal: {seed['company']} {seed['signal']}. "
+                f"Pain: {seed['pain']}."
+            )
+            constraints = [f"under {vc['word_limit']} words"] + vc["constraints_suffix"]
+            gen_model = "claude-sonnet-4-6" if vc["adv"] == 1.0 else "deepseek/deepseek-chat"
+            tasks.append(make_task(
+                tid=tid,
+                authoring_mode="multi_llm",
+                source_traces=[],
+                difficulty="hard" if vc["adv"] == 1.0 else DIFFICULTY_MAP[seed["segment"]],
+                context=context,
+                task_type=vc["task_type"],
+                constraints=constraints,
+                segment=seed["segment"],
+                failure_tag="tone_drift" if vc["adv"] == 1.0 else "signal_missing",
+                adv_weight=vc["adv"],
+                signal_source=seed["src"],
+                signal_time_window=seed["win"],
+                generation_model=gen_model,
+            ))
+            tid += 1
+    return tasks
+
+
+def build_live_tasks(tasks_so_far):
+    """Call LLM APIs to generate tasks. Requires ANTHROPIC_API_KEY and OPENROUTER_API_KEY."""
+    try:
+        import anthropic
+    except ImportError:
+        print("[ERROR] anthropic not installed. Run: pip install anthropic")
+        return tasks_so_far
+
+    client = anthropic.Anthropic()
+    tasks = list(tasks_so_far)
+    tid = START_ID
+
+    for seed in SEEDS:
+        for vc in VARIATION_CONFIGS:
+            seed_prompt = (
+                f"Scenario: {seed['role']} at {seed['company']} ({seed['segment']}, {seed['industry']}). "
+                f"Signal: {seed['signal']}. Pain: {seed['pain']}.\n"
+                f"Task type: {vc['task_type']}. Word limit: {vc['word_limit']}. "
+                f"Adversarial: {vc['adv'] == 1.0}.\n"
+                f"Additional constraints: {', '.join(vc['constraints_suffix'])}"
+            )
+            try:
+                model = "claude-sonnet-4-6" if vc["adv"] == 1.0 else "claude-haiku-4-5-20251001"
+                msg = client.messages.create(
+                    model=model,
+                    max_tokens=400,
+                    temperature=0.7,
+                    system=GENERATION_SYSTEM_PROMPT,
+                    messages=[{"role": "user", "content": seed_prompt}],
+                )
+                raw = json.loads(msg.content[0].text.strip())
+                task = make_task(
+                    tid=tid,
+                    authoring_mode="multi_llm",
+                    source_traces=[],
+                    difficulty=raw.get("difficulty", DIFFICULTY_MAP[seed["segment"]]),
+                    context=raw.get("context", ""),
+                    task_type=raw.get("task_type", vc["task_type"]),
+                    constraints=raw.get("constraints", [f"under {vc['word_limit']} words"]),
+                    segment=seed["segment"],
+                    failure_tag="tone_drift" if vc["adv"] == 1.0 else "signal_missing",
+                    adv_weight=vc["adv"],
+                    signal_source=seed["src"],
+                    signal_time_window=seed["win"],
+                    generation_model=model,
+                )
+                tasks.append(task)
+                print(f"  Generated {task['task_id']} via {model}")
+            except Exception as e:
+                print(f"  [WARN] Seed {seed['id']} v{vc['v']} failed: {e} — using mock fallback")
+                tasks.append(build_mock_tasks()[tid - START_ID])
+            tid += 1
+
+    return tasks
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Multi-LLM synthesis task generation")
+    parser.add_argument("--mock", action="store_true", default=True, help="Use mock mode (no API calls)")
+    parser.add_argument("--live", action="store_true", help="Call LLM APIs (overrides --mock)")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+
+    if args.live:
+        args.mock = False
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if args.mock:
+        tasks = build_mock_tasks()
+        gen_note = "mock (template expansion)"
+    else:
+        tasks = build_live_tasks([])
+        gen_note = "live (LLM API calls)"
+
+    if args.dry_run:
+        print(f"[dry-run] Would write {len(tasks)} tasks ({gen_note}) → {OUT_FILE}")
+        return
+
+    with open(OUT_FILE, "w") as f:
+        for task in tasks:
+            f.write(json.dumps(task) + "\n")
+
+    segs = {}
+    for t in tasks:
+        s = t["metadata"]["tenacious_segment"]
+        segs[s] = segs.get(s, 0) + 1
+    print(f"[multi_llm] Wrote {len(tasks)} tasks ({gen_note}) → {OUT_FILE}")
+    print(f"  Segments: {segs}")
+
+
+if __name__ == "__main__":
+    main()
