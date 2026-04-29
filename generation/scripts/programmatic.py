@@ -21,6 +21,7 @@ Usage:
 
 import json
 import argparse
+import random
 import sys
 from pathlib import Path
 
@@ -160,7 +161,12 @@ def build_tasks():
 def main():
     parser = argparse.ArgumentParser(description="Programmatic task generation")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility (default: 42)")
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    print(f"[programmatic] seed={args.seed}")
 
     tasks = build_tasks()
     OUT_DIR.mkdir(parents=True, exist_ok=True)

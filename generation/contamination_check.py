@@ -29,7 +29,8 @@ from collections import defaultdict
 from pathlib import Path
 from datetime import datetime
 
-random.seed(42)
+# Seed is set in main() via --seed; module-level default kept for import safety
+_DEFAULT_SEED = 42
 
 ROOT        = ROOT = Path(__file__).parent.parent
 FILTERED    = ROOT / "generation" / "raw_tasks" / "filtered.jsonl"
@@ -189,7 +190,12 @@ def main():
     parser = argparse.ArgumentParser(description="Contamination checks + dataset partitioning")
     parser.add_argument("--skip-embedding", action="store_true",
                         help="Skip embedding similarity check (faster)")
+    parser.add_argument("--seed", type=int, default=_DEFAULT_SEED,
+                        help="Random seed for stratified partition (default: 42)")
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    print(f"[contamination_check] seed={args.seed}")
 
     if not FILTERED.exists():
         print(f"[ERROR] {FILTERED} not found. Run judge_filter.py first.")

@@ -22,6 +22,7 @@ Usage:
 
 import json
 import argparse
+import random
 import sys
 import os
 from pathlib import Path
@@ -30,27 +31,19 @@ ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "generation"))
 from task_templates import make_task, TODAY
 
-OUT_DIR  = ROOT / "generation" / "raw_tasks"
-OUT_FILE = OUT_DIR / "multi_llm.jsonl"
-START_ID = 106
+OUT_DIR     = ROOT / "generation" / "raw_tasks"
+OUT_FILE    = OUT_DIR / "multi_llm.jsonl"
+PROMPTS_DIR = ROOT / "generation" / "prompts"
+START_ID    = 106
 
-# ── System prompt used for live LLM generation (documented here for reproducibility) ──
-GENERATION_SYSTEM_PROMPT = """You are a dataset engineer building evaluation tasks for a B2B sales agent benchmark.
+# ── System prompt loaded from generation/prompts/generation_system_prompt.md ──
+def _load_prompt(filename: str) -> str:
+    path = PROMPTS_DIR / filename
+    if not path.exists():
+        raise FileNotFoundError(f"Prompt file not found: {path}")
+    return path.read_text().strip()
 
-Generate a single evaluation task in this EXACT JSON format:
-{
-  "context": "<prospect profile + verified signal, 2-4 sentences>",
-  "task_type": "<email_outreach|follow_up|discovery_response|objection_handling|closing>",
-  "constraints": ["<constraint 1>", "<constraint 2>", ...],
-  "difficulty": "<easy|medium|hard>"
-}
-
-Rules:
-- The context MUST include at least one verifiable signal (funding, layoff, job posting, product launch)
-- Constraints must be machine-checkable (word count, banned words, link presence, etc.)
-- Do not generate generic or vague tasks — every scenario must be specific
-- Difficulty hard: add an adversarial constraint (banned word is tempting, pricing is tempting)
-"""
+GENERATION_SYSTEM_PROMPT = _load_prompt("generation_system_prompt.md")
 
 # ── 12 seed scenarios ──────────────────────────────────────────────────────────
 SEEDS = [
@@ -199,13 +192,18 @@ def build_live_tasks(tasks_so_far):
 
 def main():
     parser = argparse.ArgumentParser(description="Multi-LLM synthesis task generation")
-    parser.add_argument("--mock", action="store_true", default=True, help="Use mock mode (no API calls)")
-    parser.add_argument("--live", action="store_true", help="Call LLM APIs (overrides --mock)")
+    parser.add_argument("--mock",    action="store_true", default=True, help="Use mock mode (no API calls)")
+    parser.add_argument("--live",    action="store_true", help="Call LLM APIs (overrides --mock)")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--seed",    type=int, default=42,
+                        help="Random seed for reproducibility (default: 42)")
     args = parser.parse_args()
 
     if args.live:
         args.mock = False
+
+    random.seed(args.seed)
+    print(f"[multi_llm] seed={args.seed}  prompt=generation/prompts/generation_system_prompt.md")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 

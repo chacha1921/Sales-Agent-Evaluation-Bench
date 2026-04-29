@@ -20,6 +20,7 @@ Usage:
 
 import json
 import argparse
+import random
 import sys
 from pathlib import Path
 
@@ -378,7 +379,12 @@ TASKS = [
 def main():
     parser = argparse.ArgumentParser(description="Trace-derived task generation")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility (default: 42)")
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    print(f"[trace_derived] seed={args.seed}")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
