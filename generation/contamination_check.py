@@ -136,12 +136,20 @@ def check_timeshift(tasks: list) -> dict:
 # ── Stratified partition ──────────────────────────────────────────────────────
 
 def _profile_key(task: dict) -> str:
-    """Group key for partitioning. Tasks that share a prospect scenario (same first
-    60 chars of context) are kept in the same split to prevent n-gram leakage.
-    trace_derived variants share the same base prospect; programmatic/multi_llm share
-    the same profile/seed. All other tasks are independent."""
+    """Group key for partitioning. All variations of the same seed land in the same
+    split to prevent n-gram/embedding leakage across splits.
+    multi_llm: uses seed_id from metadata (set at generation time, 5 vars per seed).
+    programmatic/trace_derived: uses first 60 chars of context (same prospect = same group).
+    All other tasks are independent."""
     mode = task.get("authoring_mode", "")
-    if mode in ("programmatic", "multi_llm", "trace_derived"):
+    if mode == "multi_llm":
+        seed_id = task["metadata"].get("seed_id")
+        if seed_id:
+            return f"multi_llm_{seed_id}"
+        # Fallback for tasks generated before seed_id was added
+        tid_num = int(task["task_id"].replace("TB-", ""))
+        return f"multi_llm_seed_{(tid_num - 106) // 5}"
+    if mode in ("programmatic", "trace_derived"):
         return task["input"]["context"][:60]
     return task["task_id"]
 

@@ -271,17 +271,18 @@ def tone_checker_fn(output: str, mock: bool = False) -> float:
 def _gemini_call(user_content: str, max_tokens: int = 20) -> str:
     """Shared Gemini Flash call for LLM judge dimensions. Temperature 0 for reproducibility."""
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types as genai_types
     except ImportError:
-        raise ImportError("google-generativeai not installed. Run: pip install google-generativeai")
+        raise ImportError("google-genai not installed. Run: pip install google-genai")
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         raise EnvironmentError("GOOGLE_API_KEY not set — run with --mock-llm or set GOOGLE_API_KEY")
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(model_name="gemini-2.0-flash")
-    response = model.generate_content(
-        user_content,
-        generation_config=genai.types.GenerationConfig(temperature=0.0, max_output_tokens=max_tokens),
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=user_content,
+        config=genai_types.GenerateContentConfig(temperature=0.0, max_output_tokens=max_tokens),
     )
     return response.text.strip()
 

@@ -60,7 +60,8 @@ THRESHOLD = {
 
 def make_task(tid, authoring_mode, source_traces, difficulty, context, task_type,
               constraints, segment, failure_tag, adv_weight, signal_source,
-              signal_time_window, generation_model="programmatic", ref_output=""):
+              signal_time_window, generation_model="programmatic", ref_output="",
+              seed_id=None):
     rubric_key = task_type if task_type in RUBRICS else "email_outreach"
     return {
         "task_id": f"TB-{tid:04d}",
@@ -90,6 +91,7 @@ def make_task(tid, authoring_mode, source_traces, difficulty, context, task_type
             "judge_scores": None,
             "signal_source": signal_source,
             "signal_time_window": signal_time_window,
+            "seed_id": seed_id,
             "created_at": TODAY,
             "reference_output": ref_output,
         },

@@ -12,7 +12,7 @@ Authoring record:
   Model route (mock) : template expansion (no LLM)
   Model route (live) :
     Hard seed variants (adv_weight=1.0) → deepseek/deepseek-chat    via OpenRouter
-    Bulk variants (adv_weight=0.5)      → gemini/gemini-2.0-flash   via Google GenAI
+    Bulk variants (adv_weight=0.5)      → gemini/gemini-2.5-flash   via Google GenAI
   Leakage guard : generation_model logged per task; judge_model must differ
                   gemini tasks → judged by claude-haiku (different family)
 
@@ -147,7 +147,7 @@ def build_mock_tasks():
                 f"Pain: {seed['pain']}."
             )
             constraints = [f"under {vc['word_limit']} words"] + vc["constraints_suffix"]
-            gen_model = "deepseek/deepseek-chat" if vc["adv"] == 1.0 else "gemini/gemini-2.0-flash"
+            gen_model = "deepseek/deepseek-chat" if vc["adv"] == 1.0 else "gemini/gemini-2.5-flash"
             tasks.append(make_task(
                 tid=tid,
                 authoring_mode="multi_llm",
@@ -169,23 +169,34 @@ def build_mock_tasks():
 
 def _call_gemini(system_prompt: str, user_prompt: str) -> str:
     """Call Gemini Flash for bulk task generation. Returns raw text response."""
+    import time
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types as genai_types
     except ImportError:
-        raise ImportError("google-generativeai not installed. Run: pip install google-generativeai")
+        raise ImportError("google-genai not installed. Run: pip install google-genai")
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         raise EnvironmentError("GOOGLE_API_KEY not set")
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        system_instruction=system_prompt,
-    )
-    response = model.generate_content(
-        user_prompt,
-        generation_config=genai.types.GenerationConfig(temperature=0.7, max_output_tokens=400),
-    )
-    return response.text.strip()
+    client = genai.Client(api_key=api_key)
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=user_prompt,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=0.7,
+                    max_output_tokens=1500,
+                    thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+                ),
+            )
+            return response.text.strip()
+        except Exception as e:
+            if attempt < 2 and ("503" in str(e) or "UNAVAILABLE" in str(e) or "429" in str(e)):
+                time.sleep(10 * (attempt + 1))
+                continue
+            raise
 
 
 def _call_openrouter(model_id: str, system_prompt: str, user_prompt: str) -> str:
@@ -231,7 +242,7 @@ def build_live_tasks(tasks_so_far):
             # Hard seeds: DeepSeek Chat via OpenRouter (cheap, good quality adversarial)
             # Bulk seeds: Gemini Flash (very cheap, different model family for leakage prevention)
             HARD_MODEL = "deepseek/deepseek-chat"
-            gen_model_id = HARD_MODEL if is_adversarial else "gemini/gemini-2.0-flash"
+            gen_model_id = HARD_MODEL if is_adversarial else "gemini/gemini-2.5-flash"
             try:
                 if is_adversarial:
                     raw_text = _call_openrouter(HARD_MODEL, GENERATION_SYSTEM_PROMPT, seed_prompt)
