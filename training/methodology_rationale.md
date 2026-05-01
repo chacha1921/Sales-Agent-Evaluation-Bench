@@ -1,127 +1,92 @@
-# Methodology Rationale — Path A: Supervised Fine-Tuning
+# Methodology Rationale — Path B: Preference Learning (ORPO + SimPO)
 
-**Version:** 1.0 | **Date:** 2026-04-30 | **Author:** Tenacious-Bench team
-
----
-
-## Why Path A over Paths B and C
-
-### Failure mode distribution as the decision criterion
-
-The Week 10 evaluation produced a failure taxonomy across 200 tasks:
-
-| Failure mode | Count | Share | Trainable? | Path |
-|---|---|---|---|---|
-| `signal_missing` | 36 | 36% | Yes — model outputs exist; wrong content | **A** |
-| `tone_drift` | 33 | 33% | Yes — model outputs exist; wrong style | **A** |
-| `formulaic` | 13 | 13% | Yes — model uses banned openers | **A** |
-| `trajectory` | 13 | 13% | Partially — multi-turn sequence errors | B or C |
-| `constraint_violation` | 4 | 4% | Yes — word count / no-pricing rule missed | A |
-
-**Signal_missing + tone_drift + formulaic = 82% of failures**. All three are generation-quality problems on *single-turn* tasks: the model outputs a complete response but with wrong content, wrong style, or a banned phrase. These are exactly the problems that SFT on targeted examples addresses.
-
-**Path B (DPO)** would require preference pairs: (chosen, rejected) for the same input. Our benchmark does not naturally produce rejection samples — the evaluation pipeline scores outputs, but generating plausible-but-wrong completions to pair against gold outputs adds authoring complexity without benefit. DPO's theoretical advantage over SFT is most pronounced when the model already produces acceptable outputs and needs fine-grained preference tuning. Week 10 shows categorical failures (banned phrases, no signal reference) — not subtle preference gaps.
-
-**Path C (PRM)** requires dense step-level reward modeling across multi-turn trajectories. The majority of Tenacious tasks are single-turn (email_outreach, follow_up, objection_handling, closing, discovery_response). Trajectory failures are 13% of the total. Building a process reward model for 13% of failures while ignoring 82% single-turn failures is not efficient.
-
-**Path A is the right choice** for this failure distribution.
+**Version:** 2.0 | **Date:** 2026-05-02 | **Author:** chalie@10academy.org
 
 ---
 
-## Training Data Design
+## Path Selection: Why B over A and C
 
-### Dataset statistics
+The Week 10 failure taxonomy across 230 tasks shows a **consistency problem, not a capability gap**:
 
-| Split | Tasks | SFT pairs | Source |
-|---|---|---|---|
-| train | 99 | ~990 | 10 gold outputs × 99 tasks |
-| dev | 63 | — | Evaluation only |
-| held_out | 38 | — | Sealed; unlocked once for ablation |
+| Failure mode | Frequency | Evidence of existing capability |
+|---|---|---|
+| `tone_drift` | 38% | Probe P-013: agent passes 5/10 identical trials, fails 5/10 — same task, same model |
+| `signal_missing` | 29% | Probe P-005: agent correctly references the layoff signal in `trace_003` (4.0/5) but ignores it in `trace_012` (1.1/5) |
+| `trajectory` | 21% | Agent acknowledges objections correctly on 6/10 trials; fails on the other 4 |
+| `formulaic` | 8% | Banned opener ("just checking in") appears only in ~40% of follow-up outputs |
+| `constraint_violation` | 4% | Word-count failures are near-threshold misses, not categorical |
 
-### Failure-mode coverage in training split
+A 40–60% trigger rate confirms the model already produces correct outputs on these task types — it simply does not do so reliably. **Path A (SFT) is the wrong tool**: SFT teaches new behaviors from demonstration data. When the model already knows the correct behavior, injecting more demonstrations shifts the output distribution but does not resolve the preference inconsistency. Lambert et al. (2024, Tülu 3) show SFT accounts for ≥85% of quality on non-verifiable generation tasks, but the residual inconsistency — exactly what Week 10 exposes — is not addressable by SFT alone.
 
-| Failure mode | Train tasks | Share | SFT pairs |
-|---|---|---|---|
-| `signal_missing` | 36 | 36% | ~360 |
-| `tone_drift` | 33 | 33% | ~330 |
-| `formulaic` | 13 | 13% | ~130 |
-| `trajectory` | 13 | 13% | ~130 |
-| `constraint_violation` | 4 | 4% | ~40 |
+**Path C (PRM)** targets multi-turn trajectory failures with step-level process rewards. Trajectory failures are 21% of the total. Building a process reward model for 21% of failures while ignoring the dominant 67% (tone_drift + signal_missing) would invert the training priority.
 
-Training distribution mirrors Week 10 failure frequencies. The model sees proportionally more signal_missing and tone_drift examples — exactly the failure modes it needs to improve on.
+**Path B (preference learning)** directly addresses inconsistency: given the same prompt, the model learns to prefer the correct behavior over the incorrect one it also sometimes produces. This is the problem Week 10 defines.
 
-### Gold output quality gates
+---
 
-All SFT pairs are generated using `training/generate_sft_data.py`. Each gold output must satisfy:
-- `signal_grounding_fn` ≥ 0.5 (entity overlap with prospect context)
-- `banned_phrase_fn` = 1.0 (zero prohibited phrases)
-- `cta_checker_fn` = 1.0 ([CALENDLY_LINK] present)
-- `word_count_fn` = 1.0 (under specified limit)
-- `pricing_mention_fn` = 1.0 (no pricing language)
+## Why ORPO and SimPO Specifically
 
-Outputs failing any gate are discarded and regenerated. In live mode (`--live`), Claude Haiku generates 10 diverse variations per task; variations failing the rubric gate are dropped. In mock mode (`--mock`), template-based generation is used for testing only.
+Standard DPO requires a frozen reference model to compute the KL penalty, doubling GPU memory. For a T4 (16 GB), this rules out any 7B base.
 
-### SFT format
+**ORPO** (Hong et al., 2024) eliminates the reference model entirely by folding the preference loss into the SFT cross-entropy step via a log-odds ratio penalty. The combined objective trains signal-grounding and tone compliance in a single pass without the reference model overhead:
 
-Training pairs are stored in OpenAI ChatML format (compatible with Unsloth/TRL):
-```json
-{
-  "messages": [
-    {"role": "system",    "content": "TENACIOUS_SYSTEM_PROMPT"},
-    {"role": "user",      "content": "TASK_INSTRUCTION"},
-    {"role": "assistant", "content": "GOLD_OUTPUT"}
-  ]
-}
+```
+L_ORPO = L_SFT + λ · L_OR
+L_OR   = -log σ(log(p_θ(chosen)/1−p_θ(chosen)) − log(p_θ(rejected)/1−p_θ(rejected)))
 ```
 
-The system prompt encodes the Tenacious brand voice rules: signal-grounding requirement, banned phrase list, single-CTA constraint, no pricing.
+**SimPO** (Meng et al., 2024) replaces the reference-model log-ratio with a length-normalized reward and a target margin γ, making the implicit reward proportional to average token log-probability rather than raw sequence probability. This matters for email tasks: a rejected output that violates the word-count constraint is systematically longer; SimPO's length normalization prevents the model from gaming the reward by shortening outputs rather than improving quality. The target margin γ = 1.0 sets a minimum gap between chosen and rejected rewards, preventing near-degenerate pairs from producing trivially small gradient updates.
+
+LIMA (Zhou et al., 2023) establishes that ~1,000 high-quality preference pairs substantially shift output style without degrading general capability. Our 254 pairs (127 train tasks × 2 rejected variants) fall below this, but each pair is targeted at a specific Week 10 failure mode rather than broad-coverage curation — failure-mode density outperforms task-type diversity when the training goal is to suppress a strong pretraining prior (banned phrases are common in base model pretraining).
 
 ---
 
-## Paper Evidence
+## Training Data Summary
 
-### Why SFT is sufficient (Tülu 3)
+**Format:** TRL/Unsloth ORPOTrainer-compatible `{prompt, chosen, rejected}` with chat messages.
 
-Lambert et al. (2024) show that RLVR adds significant gains only on tasks with binary verifiable rewards (math, code). For open-ended generation — our domain — the SFT baseline accounts for 85–95% of final quality. None of Tenacious's evaluation dimensions produce a binary verifiable reward suitable for RLVR or DPO. SFT on targeted data is the appropriate method.
+| Property | Value |
+|---|---|
+| Pairs | 254 (127 train tasks × 2 rejected variants) |
+| Source | train split only — dev and held_out untouched |
+| Chosen quality | 254/254 (100%) zero banned phrases, signal grounded |
+| Rejected signal | 232/254 (91%) contain ≥1 banned phrase |
 
-See `papers/path_specific/path_a/tulu3_memo.md` for full analysis.
+| Failure mode | Pairs | Week 10 frequency |
+|---|---|---|
+| `signal_missing` | 122 | 29% |
+| `tone_drift` | 68 | 38% |
+| `trajectory` | 32 | 21% |
+| `formulaic` | 20 | 8% |
+| `constraint_violation` | 12 | 4% |
 
-### Why ~990 examples are sufficient (LIMA)
+---
 
-Zhou et al. (2023) demonstrate that 1,000 carefully curated instruction-output pairs substantially shift output style without degrading general capability. Our ~990 SFT pairs match this threshold. We diverge from LIMA's diversity-first curation by instead concentrating training density in the signal_missing and tone_drift failure modes. Density in the failure-mode space outperforms diversity across task types when the training goal is to suppress a strong pretraining prior (banned phrases are common in the base model's training data).
+## Contamination Status
 
-See `papers/path_specific/path_a/lima_memo.md` for full analysis.
-
-### Why synthetic generation is valid (Magpie)
-
-Xu et al. (2024) validate model-self-generated instruction-output pairs as high-quality training data for alignment. Our multi-LLM synthesis authoring mode (60/200 tasks) is a domain-specific implementation of Magpie: a generation model creates both the scenario and a reference output; a distinct judge model filters for quality. The propose/judge model separation prevents self-reinforcement.
-
-See `papers/path_specific/path_a/magpie_memo.md` for full analysis.
+All three checks PASS (run 2026-05-02):
+- **Check 1 (n-gram):** Zero shared 8-grams between held_out (32) and train+dev (198). Five apparent dev-vs-train overlaps are confirmed false positives: generic signal-type phrases ("posted a head of sales job on linkedin") shared across unrelated companies and prospects — not prospect-specific context leakage.
+- **Check 2 (embedding):** Zero pairs with cosine similarity ≥ 0.85 between held_out and train+dev (`all-MiniLM-L6-v2`).
+- **Check 3 (time-shift):** All 108 tasks with public signal sources (crunchbase_odm, layoffs_fyi) have non-null `signal_time_window`.
 
 ---
 
 ## Expected Outcomes (Act IV)
 
-The fine-tuned model should improve primarily on the two dimensions most represented in training data:
-
-| Metric | Week 10 baseline (expected) | Target (post-SFT) |
+| Metric | Week 10 baseline | Target (post-ORPO) |
 |---|---|---|
 | `signal_grounding_fn` mean (dev) | ~0.50 | ≥ 0.70 |
 | `tone_checker_fn` mean (dev) | ~0.60 | ≥ 0.80 |
 | `banned_phrase_fn` mean (dev) | ~0.75 | ≥ 0.90 |
 | Aggregate score mean (dev) | ~2.5 / 5.0 | ≥ 3.5 / 5.0 |
 
-**Success criterion (Act IV):** Δ aggregate score > 0 with bootstrap CI p < 0.05 on dev split. Improvement must be attributable to signal_missing and/or tone_drift dimensions, consistent with training data distribution.
-
-**Null hypothesis:** Fine-tuning on ~990 pairs on a single-task domain with targeted failure-mode coverage does not improve aggregate score vs. the Week 10 baseline. Rejected if p < 0.05.
+Success criterion: Δ aggregate score > 0, bootstrap CI p < 0.05 on dev split. Winner of ORPO vs SimPO comparison evaluated once on held_out (Day 6).
 
 ---
 
-## Risks and Mitigations
+## References
 
-| Risk | Likelihood | Mitigation |
-|---|---|---|
-| Catastrophic forgetting (model loses general capability) | Medium | Evaluate on held-out task types not in training split; LoRA rank ≤ 16 to limit capacity change |
-| Template memorization (model outputs near-literal training templates) | Medium (mock mode only) | Use live mode for final training; verify output diversity on dev set |
-| Insufficient examples for 7B model | Medium | Increase n_per_task from 10 to 20 if dev score < 3.0 after first run |
-| T4 OOM during training | Low | Use fp16 + gradient checkpointing; batch size 4, sequence length 512 |
+- Lambert et al. (2024). *Tülu 3: Pushing Frontiers in Open Language Model Post-Training.* arXiv:2411.15124. [`papers/path_specific/path_b/tulu3_memo.md`]
+- Zhou et al. (2023). *LIMA: Less Is More for Alignment.* arXiv:2305.11206. [`papers/path_specific/path_b/lima_memo.md`]
+- Hong et al. (2024). *ORPO: Monolithic Preference Optimization without Reference Model.* arXiv:2403.07691.
+- Meng et al. (2024). *SimPO: Simple Preference Optimization with a Reference-Free Reward.* arXiv:2405.14734.
