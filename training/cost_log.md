@@ -104,3 +104,12 @@ Costs are in USD. Model IDs are exact to enable reproducibility checks.
 ---
 
 *Log version: 1.1 | Last updated: 2026-05-01*
+
+## Live Generation Run (2026-05-01)
+
+| Item | Model | Calls (est.) | Cost (USD, est.) |
+|---|---|---|---|
+| multi_llm bulk generation | gemini/gemini-2.5-flash | 72 | $0.0070 |
+| multi_llm hard seed generation | deepseek/deepseek-chat (OpenRouter) | 18 | $0.0020 |
+| judge_filter --live (230 tasks) | gemini-2.5-flash + deepseek-chat | 230 | $0.0121 |
+| **Run total** | | | **$0.0211** |

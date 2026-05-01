@@ -252,19 +252,22 @@ Task:
 
 
 def live_gold_outputs(task: dict, n: int, client) -> list[str]:
+    """Generate gold outputs via Gemini Flash (leakage-safe: judge is DeepSeek)."""
+    from google.genai import types as genai_types
     task_prompt = build_user_prompt(task)
     user_msg = LIVE_GENERATION_PROMPT.format(n=n, task_prompt=task_prompt)
 
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=2048,
-        temperature=0.7,
-        messages=[
-            {"role": "user", "content": user_msg},
-        ],
-        system=TENACIOUS_SYSTEM_PROMPT,
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=user_msg,
+        config=genai_types.GenerateContentConfig(
+            system_instruction=TENACIOUS_SYSTEM_PROMPT,
+            temperature=0.7,
+            max_output_tokens=2048,
+            thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+        ),
     )
-    raw = response.content[0].text.strip()
+    raw = response.text.strip()
 
     # Parse JSON array
     m = re.search(r"\[.*\]", raw, re.DOTALL)
@@ -307,7 +310,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate SFT training pairs for Path A")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--mock", action="store_true", help="Template-based generation (no API key)")
-    mode.add_argument("--live", action="store_true", help="Claude Haiku generation (requires ANTHROPIC_API_KEY)")
+    mode.add_argument("--live", action="store_true", help="Gemini Flash generation (requires GOOGLE_API_KEY)")
     parser.add_argument("--n-per-task", type=int, default=10,
                         help="Gold outputs per task (default: 10 → ~990 total pairs)")
     parser.add_argument("--seed", type=int, default=_DEFAULT_SEED,
@@ -339,14 +342,23 @@ def main():
     client = None
     if args.live:
         try:
-            import anthropic
-            api_key = __import__("os").environ.get("ANTHROPIC_API_KEY")
+            import os
+            from pathlib import Path as _Path
+            _env = _Path(__file__).parent.parent / ".env"
+            if _env.exists():
+                for _line in _env.read_text().splitlines():
+                    _line = _line.strip()
+                    if _line and not _line.startswith("#") and "=" in _line:
+                        _k, _v = _line.split("=", 1)
+                        os.environ.setdefault(_k.strip(), _v.strip())
+            from google import genai
+            api_key = os.environ.get("GOOGLE_API_KEY")
             if not api_key:
-                print("[ERROR] ANTHROPIC_API_KEY not set. Use --mock or set the environment variable.")
+                print("[ERROR] GOOGLE_API_KEY not set. Use --mock or set the environment variable.")
                 sys.exit(1)
-            client = anthropic.Anthropic(api_key=api_key)
+            client = genai.Client(api_key=api_key)
         except ImportError:
-            print("[ERROR] anthropic package not installed. Run: pip install anthropic")
+            print("[ERROR] google-genai not installed. Run: pip install google-genai")
             sys.exit(1)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)

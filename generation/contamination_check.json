@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-05-01T22:44:17.913178Z",
+  "timestamp": "2026-05-01T23:05:14.708336Z",
   "total_tasks": 230,
   "partition": {
     "train": 127,
@@ -15,7 +15,7 @@
       "violations": 0,
       "violation_details": [],
       "held_out_tasks_checked": 32,
-      "train_dev_ngrams_indexed": 3826
+      "train_dev_ngrams_indexed": 4062
     },
     "2_embedding_similarity": {
       "check": "embedding_similarity",

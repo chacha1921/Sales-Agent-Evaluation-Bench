@@ -115,9 +115,9 @@ def append_cost_log(cost: dict, n_tasks: int, mode: str) -> None:
         f"\n## Live Generation Run ({today})\n\n"
         f"| Item | Model | Calls (est.) | Cost (USD, est.) |\n"
         f"|---|---|---|---|\n"
-        f"| multi_llm bulk generation | gemini/gemini-2.0-flash | 72 | ${cost['gemini_generation']:.4f} |\n"
+        f"| multi_llm bulk generation | gemini/gemini-2.5-flash | 72 | ${cost['gemini_generation']:.4f} |\n"
         f"| multi_llm hard seed generation | deepseek/deepseek-chat (OpenRouter) | 18 | ${cost['deepseek_generation']:.4f} |\n"
-        f"| judge_filter --live ({n_tasks} tasks) | gemini-2.0-flash + deepseek-chat | {n_tasks} | ${cost['judge_calls']:.4f} |\n"
+        f"| judge_filter --live ({n_tasks} tasks) | gemini-2.5-flash + deepseek-chat | {n_tasks} | ${cost['judge_calls']:.4f} |\n"
         f"| **Run total** | | | **${cost['total_estimated']:.4f}** |\n"
     )
     with log_path.open("a") as f:
