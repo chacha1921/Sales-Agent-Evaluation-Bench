@@ -46,12 +46,13 @@ VALID_CHECKERS = {
 }
 
 JUDGE_ROUTING = {
-    "claude-sonnet-4-6":   "deepseek/deepseek-chat",
+    "claude-sonnet-4-6":      "claude-haiku-4-5-20251001",
     "deepseek/deepseek-chat": "claude-haiku-4-5-20251001",
-    "template_expansion":  "claude-haiku-4-5-20251001",
-    "trace_derived":       "claude-haiku-4-5-20251001",
-    "programmatic":        "claude-haiku-4-5-20251001",
-    "multi_llm":           "claude-haiku-4-5-20251001",
+    "gemini/gemini-2.0-flash":"claude-haiku-4-5-20251001",
+    "template_expansion":     "claude-haiku-4-5-20251001",
+    "trace_derived":          "claude-haiku-4-5-20251001",
+    "programmatic":           "claude-haiku-4-5-20251001",
+    "multi_llm":              "claude-haiku-4-5-20251001",
 }
 
 def _load_prompt(filename: str) -> str:
@@ -164,8 +165,8 @@ def run_filter(mock: bool = True, verbose: bool = False, seed: int = 42):
     random.seed(seed)
     print(f"[judge_filter] seed={seed}  prompt=generation/prompts/judge_system_prompt.md")
 
-    raw_files = sorted(RAW_DIR.glob("*.jsonl"))
-    raw_files = [f for f in raw_files if f.name != "filtered.jsonl"]
+    _exclude = {"filtered.jsonl", "judge_filter_log.jsonl"}
+    raw_files = sorted(f for f in RAW_DIR.glob("*.jsonl") if f.name not in _exclude)
 
     all_tasks = []
     for fpath in raw_files:

@@ -71,8 +71,8 @@ BANNED_PHRASES = _load_banned_phrases()
 #   pricing_mention_fn:   1.0 = no pricing language; 0.0 = any pricing/cost reference (binary)
 #   objection_ack_fn:     1.0 = empathetic acknowledgment before any pivot; 0.0 = direct pivot
 #   tone_checker_fn:      1.0 = direct, signal-led, non-pushy, concise, human
-#                         0.5 = acceptable tone with one formulaic element
-#                         0.0 = heavily formulaic or pushy (≥3 pushy phrases detected)
+#                         0.5 = acceptable tone with one tier-2 jargon hit
+#                         0.0 = any tier-1 phrase (absolute brand violation per Style Guide v2)
 
 
 def signal_grounding_fn(output: str, context: str) -> float:
@@ -210,16 +210,30 @@ def tone_checker_fn(output: str, mock: bool = False) -> float:
     κ rose from 0.662 to 1.000 after this change. See dataset/inter_rater_agreement.md.
     """
     if mock:
-        # Tier 1: immediate FAIL — any single match returns 0.0
+        # Tier 1: immediate FAIL — Style Guide v2 absolute violations
         tier1 = [
-            "just checking in", "circle back", "circling back", "touching base",
-            "i hope this email finds you well", "i hope this finds you well",
+            # Formulaic openers
+            "just checking in", "just following up", "circle back", "circling back",
+            "touching base", "i hope this email finds you well", "i hope this finds you well",
             "i wanted to reach out", "my name is", "i'm reaching out from",
+            # Offshore/agency clichés [SG]
+            "top talent", "a-players", "rockstar", "ninja", "wizard", "world-class",
+            # Fake urgency [SG]
+            "you'll regret missing this", "don't miss out",
+            # Passive-aggressive [SG]
+            "per my last email", "i noticed you're a",
+            # Black-box claims [SG]
+            "our proprietary", "our ai-powered",
+            # Performative brevity [SG]
+            "i'll keep this brief",
+            # Vague asks [SG]
+            "quick question", "quick chat",
         ]
-        # Tier 2: gradual penalty (same as before)
+        # Tier 2: gradual penalty — jargon that weakens but doesn't always fail
         tier2 = [
-            "don't miss out", "act now", "limited time", "last chance",
-            "synergy", "leverage", "revolutionary", "game-changer",
+            "act now", "limited time", "last chance", "skyrocket", "supercharge",
+            "synergy", "leverage", "ecosystem", "game-changer", "revolutionary",
+            "disruptor", "paradigm shift", "gold standard",
         ]
         output_lower = output.lower()
         if any(p in output_lower for p in tier1):

@@ -7,17 +7,18 @@ expanded via deterministic templates — no API calls. In --live mode, seeds
 are sent to a frontier model (hard seeds) and a dev-tier model (bulk).
 
 Authoring record:
-  Seed count : 12 scenario seeds × 5 variations = 60 tasks
-  Task IDs   : TB-0106 → TB-0165
+  Seed count : 18 scenario seeds × 5 variations = 90 tasks
+  Task IDs   : TB-0106 → TB-0195
   Model route (mock) : template expansion (no LLM)
   Model route (live) :
-    Hard seed variants (adv_weight=1.0) → claude-sonnet-4-6  via Anthropic API
-    Bulk variants (adv_weight=0.5)      → deepseek/deepseek-chat via OpenRouter
+    Hard seed variants (adv_weight=1.0) → claude-sonnet-4-6       via Anthropic API
+    Bulk variants (adv_weight=0.5)      → gemini/gemini-2.0-flash  via Google GenAI
   Leakage guard : generation_model logged per task; judge_model must differ
+                  gemini tasks → judged by claude-haiku (different family)
 
 Usage:
   python generation/scripts/multi_llm_synthesis.py --mock   (no API calls)
-  python generation/scripts/multi_llm_synthesis.py --live   (requires API keys)
+  python generation/scripts/multi_llm_synthesis.py --live   (requires ANTHROPIC_API_KEY + GOOGLE_API_KEY)
 """
 
 import json
@@ -34,7 +35,7 @@ from task_templates import make_task, TODAY
 OUT_DIR     = ROOT / "generation" / "raw_tasks"
 OUT_FILE    = OUT_DIR / "multi_llm.jsonl"
 PROMPTS_DIR = ROOT / "generation" / "prompts"
-START_ID    = 106
+START_ID    = 106   # TB-0106 → TB-0195 (18 seeds × 5 variations = 90 tasks)
 
 # ── System prompt loaded from generation/prompts/generation_system_prompt.md ──
 def _load_prompt(filename: str) -> str:
@@ -83,6 +84,25 @@ SEEDS = [
     dict(id="S12", segment="smb",        role="CEO",                   company="Bloom",        industry="e-commerce enablement",
          signal="posted Head of Sales job LinkedIn this morning", src="synthetic", win=None,
          pain="CEO-led sales closed $800k ARR but can't scale past $1.2M"),
+    # ── 6 additional seeds (S13–S18) for Gemini live generation ──────────────
+    dict(id="S13", segment="series_b",  role="VP of Sales",           company="Cohere",       industry="enterprise AI",
+         signal="Series B $125M closed 2025-Q3", src="crunchbase_odm", win="2025-Q3",
+         pain="post-funding AE team doubled overnight with no onboarding process"),
+    dict(id="S14", segment="enterprise", role="Head of Revenue Enablement", company="Pendo",  industry="product analytics",
+         signal="cut 18% of go-to-market headcount 2026-Q1", src="layoffs_fyi", win="2026-Q1",
+         pain="surviving reps covering 2x territories with no revised playbook"),
+    dict(id="S15", segment="smb",        role="Co-founder",            company="Coda",         industry="collaborative docs",
+         signal="posted first Sales Development Rep job LinkedIn yesterday", src="synthetic", win=None,
+         pain="product-led acquisition stalling, need outbound motion from scratch"),
+    dict(id="S16", segment="series_b",  role="CRO",                   company="Ironclad",     industry="contract lifecycle",
+         signal="$100M Series D closed 2025-Q4", src="crunchbase_odm", win="2025-Q4",
+         pain="contract sales cycle 3x longer than industry average post-expansion"),
+    dict(id="S17", segment="enterprise", role="SVP Sales",             company="Veeva",        industry="life sciences SaaS",
+         signal="missed Q2 quota by 22% per analyst call 2025-Q2", src="synthetic", win="2025-Q2",
+         pain="enterprise AEs pitching product features instead of business outcomes"),
+    dict(id="S18", segment="smb",        role="Head of Business Dev",  company="Linear",       industry="project management",
+         signal="posted Account Executive role LinkedIn 2 days ago", src="synthetic", win=None,
+         pain="engineering-led culture, no formal sales process or talk tracks"),
 ]
 
 VARIATION_CONFIGS = [
@@ -134,17 +154,46 @@ def build_mock_tasks():
     return tasks
 
 
-def build_live_tasks(tasks_so_far):
-    """Call LLM APIs to generate tasks. Requires ANTHROPIC_API_KEY and OPENROUTER_API_KEY."""
+def _call_gemini(system_prompt: str, user_prompt: str) -> str:
+    """Call Gemini Flash for bulk task generation. Returns raw text response."""
     try:
-        import anthropic
+        import google.generativeai as genai
     except ImportError:
-        print("[ERROR] anthropic not installed. Run: pip install anthropic")
-        return tasks_so_far
+        raise ImportError("google-generativeai not installed. Run: pip install google-generativeai")
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        raise EnvironmentError("GOOGLE_API_KEY not set")
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name="gemini-2.0-flash",
+        system_instruction=system_prompt,
+    )
+    response = model.generate_content(
+        user_prompt,
+        generation_config=genai.types.GenerationConfig(temperature=0.7, max_output_tokens=400),
+    )
+    return response.text.strip()
 
+
+def _call_claude_sonnet(system_prompt: str, user_prompt: str) -> str:
+    """Call Claude Sonnet for adversarial (hard) task generation."""
+    import anthropic
     client = anthropic.Anthropic()
+    msg = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=400,
+        temperature=0.7,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+    return msg.content[0].text.strip()
+
+
+def build_live_tasks(tasks_so_far):
+    """Call LLM APIs to generate tasks. Requires ANTHROPIC_API_KEY + GOOGLE_API_KEY."""
     tasks = list(tasks_so_far)
     tid = START_ID
+    mock_tasks = build_mock_tasks()
 
     for seed in SEEDS:
         for vc in VARIATION_CONFIGS:
@@ -155,16 +204,22 @@ def build_live_tasks(tasks_so_far):
                 f"Adversarial: {vc['adv'] == 1.0}.\n"
                 f"Additional constraints: {', '.join(vc['constraints_suffix'])}"
             )
+            is_adversarial = vc["adv"] == 1.0
+            gen_model_id = "claude-sonnet-4-6" if is_adversarial else "gemini/gemini-2.0-flash"
             try:
-                model = "claude-sonnet-4-6" if vc["adv"] == 1.0 else "claude-haiku-4-5-20251001"
-                msg = client.messages.create(
-                    model=model,
-                    max_tokens=400,
-                    temperature=0.7,
-                    system=GENERATION_SYSTEM_PROMPT,
-                    messages=[{"role": "user", "content": seed_prompt}],
-                )
-                raw = json.loads(msg.content[0].text.strip())
+                if is_adversarial:
+                    raw_text = _call_claude_sonnet(GENERATION_SYSTEM_PROMPT, seed_prompt)
+                else:
+                    raw_text = _call_gemini(GENERATION_SYSTEM_PROMPT, seed_prompt)
+
+                # Strip markdown code fences if present
+                raw_text = raw_text.strip()
+                if raw_text.startswith("```"):
+                    raw_text = raw_text.split("```")[1]
+                    if raw_text.startswith("json"):
+                        raw_text = raw_text[4:]
+
+                raw = json.loads(raw_text)
                 task = make_task(
                     tid=tid,
                     authoring_mode="multi_llm",
@@ -174,17 +229,18 @@ def build_live_tasks(tasks_so_far):
                     task_type=raw.get("task_type", vc["task_type"]),
                     constraints=raw.get("constraints", [f"under {vc['word_limit']} words"]),
                     segment=seed["segment"],
-                    failure_tag="tone_drift" if vc["adv"] == 1.0 else "signal_missing",
+                    failure_tag="tone_drift" if is_adversarial else "signal_missing",
                     adv_weight=vc["adv"],
                     signal_source=seed["src"],
                     signal_time_window=seed["win"],
-                    generation_model=model,
+                    generation_model=gen_model_id,
                 )
                 tasks.append(task)
-                print(f"  Generated {task['task_id']} via {model}")
+                print(f"  Generated {task['task_id']} via {gen_model_id}")
             except Exception as e:
-                print(f"  [WARN] Seed {seed['id']} v{vc['v']} failed: {e} — using mock fallback")
-                tasks.append(build_mock_tasks()[tid - START_ID])
+                print(f"  [WARN] Seed {seed['id']} v{vc['v']} failed: {e} — mock fallback")
+                fallback = mock_tasks[tid - START_ID]
+                tasks.append(fallback)
             tid += 1
 
     return tasks

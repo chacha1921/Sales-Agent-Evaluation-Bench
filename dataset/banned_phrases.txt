@@ -1,48 +1,97 @@
+# Tenacious banned phrase list — sourced from Style Guide v2
+# Format: one phrase per line, lowercase. banned_phrase_fn does case-insensitive substring match.
+# Phrases marked [SG] are verbatim from the Style Guide v2 banned phrases table.
+# Phrases marked [inferred] are consistent with tone markers but not in the explicit table.
+
+# ── Formulaic openers (Tier-1 — immediate FAIL) ───────────────────────────────
 just checking in
-touching base
+just following up
 circling back
-following up
+circle back
+touching base
 i hope this email finds you well
+i hope this finds you well
 i hope you're doing well
-as per my last email
-per our conversation
 i wanted to reach out
-leverage
-synergy
-synergize
-synergising
-solution
-utilize
-utilize our platform
-end-to-end
-best-in-class
+i'm reaching out from
+my name is
+
+# ── Offshore / agency clichés [SG] ───────────────────────────────────────────
+top talent
+a-players
+rockstar
+ninja
+wizard
 world-class
+gold standard
+best-in-class
+our bench
+
+# ── Hype / growth promises [SG] ──────────────────────────────────────────────
+skyrocket
+supercharge
 game-changer
 game-changing
+disruptor
+disruptive
+paradigm shift
 revolutionary
 cutting-edge
 state-of-the-art
-paradigm shift
+innovative solution
+scalable solution
+
+# ── Consultant jargon [SG] ───────────────────────────────────────────────────
+synergize
+synergising
+synergy
+leverage
+ecosystem
+end-to-end
+holistic approach
 move the needle
 low-hanging fruit
 boil the ocean
 deep dive
 take it offline
-let's connect
-would love to connect
-would love to chat
-hop on a call
-quick call
-quick chat
-pick your brain
-thought leader
-thought leadership
-disruptive
-innovative solution
-scalable solution
 robust platform
-holistic approach
 seamlessly integrates
 streamline your workflow
 empower your team
 at the end of the day
+
+# ── Fake urgency [SG] ────────────────────────────────────────────────────────
+you'll regret missing this
+don't miss out
+act now
+limited time
+
+# ── Passive-aggressive / presumptuous [SG] ───────────────────────────────────
+per my last email
+as per my last email
+per our conversation
+i noticed you're a
+
+# ── Black-box vendor claims [SG] ─────────────────────────────────────────────
+our proprietary
+our ai-powered
+
+# ── Performative brevity [SG] ────────────────────────────────────────────────
+i'll keep this brief
+
+# ── Vague calendar asks [SG / inferred] ──────────────────────────────────────
+quick question
+quick chat
+quick call
+hop on a call
+pick your brain
+let's connect
+would love to connect
+would love to chat
+
+# ── Self-centered preamble [inferred] ────────────────────────────────────────
+thought leader
+thought leadership
+utilize our platform
+solution
+utilize
