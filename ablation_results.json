@@ -1,0 +1,107 @@
+{
+  "meta": {
+    "timestamp": "2026-05-01T23:21:46.738774+00:00",
+    "winner_method": "orpo",
+    "adapter_path": "/Users/chalielijalem/Documents/Tenx_MCP/week11/Sales-Agent-Evaluation-Bench/runs/orpo/adapter",
+    "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "mock_mode": true,
+    "held_out_n": 32,
+    "seed": 42
+  },
+  "arm_stats": {
+    "week10_baseline": {
+      "mean": 1.9923,
+      "ci_lo": 1.7715,
+      "ci_hi": 2.2228,
+      "n": 32
+    },
+    "prompt_engineered": {
+      "mean": 4.5547,
+      "ci_lo": 4.3594,
+      "ci_hi": 4.75,
+      "n": 32
+    },
+    "trained": {
+      "mean": 4.3809,
+      "ci_lo": 4.1777,
+      "ci_hi": 4.5977,
+      "n": 32
+    }
+  },
+  "delta_a": {
+    "description": "Trained model vs Week 10 baseline on held_out \u2014 PRIMARY",
+    "required": "p < 0.05, delta > 0",
+    "observed_delta": 2.3886,
+    "ci_lo": 2.0351,
+    "ci_hi": 2.7382,
+    "p_value": 0.0,
+    "significant": true,
+    "n_bootstrap": 2000
+  },
+  "delta_b": {
+    "description": "Trained model vs prompt-engineered baseline \u2014 no training",
+    "interpretation": "Fail = prompt engineering alone sufficient; legitimate finding",
+    "observed_delta": -0.1738,
+    "ci_lo": -0.3691,
+    "ci_hi": 0.0234,
+    "p_value": 0.966,
+    "significant": false,
+    "n_bootstrap": 2000
+  },
+  "delta_c": {
+    "tau2_week10_score": 0.79,
+    "tau2_baseline": "retailbench-held-out (Week 10 run, not re-run this week)",
+    "tenacious_trained_mean": 4.3809,
+    "note": "Delta C is informational only. \u03c4\u00b2-Bench retail was run in Week 10 (score=0.79 on probe outcome metric). Tenacious-Bench measures different dimensions (tone, signal grounding, banned phrases) so scores are not directly comparable. Both are included to distinguish domain-specific improvement from general capability change."
+  },
+  "cost_pareto": {
+    "week10_baseline": {
+      "cost_per_task_usd": 0.0004,
+      "avg_latency_s": 0.25
+    },
+    "trained": {
+      "cost_per_task_usd": 0.00024,
+      "avg_latency_s": 0.18
+    },
+    "note": "LoRA adapter adds ~0ms decode overhead on same GPU; cost reduction from using smaller adapter vs calling larger base model via API."
+  },
+  "failure_mode_breakdown": {
+    "formulaic": {
+      "week10_baseline": 1.7708,
+      "prompt_eng": 4.5417,
+      "trained": 4.5833
+    },
+    "tone_drift": {
+      "week10_baseline": 1.8036,
+      "prompt_eng": 4.5536,
+      "trained": 4.317
+    },
+    "signal_missing": {
+      "week10_baseline": 1.7054,
+      "prompt_eng": 4.6786,
+      "trained": 4.4643
+    },
+    "trajectory": {
+      "week10_baseline": 3.188,
+      "prompt_eng": 4.4,
+      "trained": 4.2
+    }
+  },
+  "segment_breakdown": {
+    "series_b": {
+      "week10_baseline": 1.8403,
+      "prompt_eng": 5.0,
+      "trained": 4.8889
+    },
+    "enterprise": {
+      "week10_baseline": 2.1251,
+      "prompt_eng": 4.15,
+      "trained": 4.15
+    },
+    "smb": {
+      "week10_baseline": 1.9141,
+      "prompt_eng": 4.8125,
+      "trained": 4.2423
+    }
+  }
+}

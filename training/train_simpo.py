@@ -66,7 +66,7 @@ SIMPO_ARGS = dict(
     fp16=True,
     logging_steps=10,
     save_strategy="epoch",
-    evaluation_strategy="epoch",
+    eval_strategy="epoch",
     seed=DEFAULT_SEED,
     report_to="none",
     remove_unused_columns=False,
@@ -168,7 +168,40 @@ def main():
     )
 
     print(f"\nStarting SimPO training ({'DRY RUN' if args.dry_run else f'{args.epochs} epochs'})...")
+    import time
+    t0 = time.time()
     trainer.train()
+    wall_time = time.time() - t0
+
+    # Write training_run.log (appends SimPO section if ORPO already wrote it)
+    log_path = ROOT / "training_run.log"
+    mode = "a" if log_path.exists() else "w"
+    with open(log_path, mode) as lf:
+        lf.write("\n# SimPO Training Run Log\n")
+        lf.write(f"method: SimPO\n")
+        lf.write(f"model: {args.model}\n")
+        lf.write(f"dry_run: {args.dry_run}\n")
+        lf.write(f"wall_time_s: {wall_time:.1f}\n\n")
+        lf.write("## Hyperparameters\n")
+        lf.write(f"beta: {args.beta}\n")
+        lf.write(f"simpo_gamma: {args.gamma}\n")
+        lf.write(f"epochs: {args.epochs}\n")
+        lf.write(f"learning_rate: {args.lr}\n")
+        lf.write(f"lora_r: {LORA_CONFIG['r']}\n")
+        lf.write(f"lora_alpha: {LORA_CONFIG['lora_alpha']}\n")
+        lf.write(f"batch_size: {SIMPO_ARGS['per_device_train_batch_size']}\n")
+        lf.write(f"grad_accum: {SIMPO_ARGS['gradient_accumulation_steps']}\n")
+        lf.write(f"effective_batch: {SIMPO_ARGS['per_device_train_batch_size'] * SIMPO_ARGS['gradient_accumulation_steps']}\n")
+        lf.write(f"train_pairs: {len(train_ds)}\n")
+        lf.write(f"eval_pairs: {len(eval_ds)}\n\n")
+        lf.write("## Loss Curve (step, train_loss, eval_loss)\n")
+        for entry in trainer.state.log_history:
+            step = entry.get("step", "")
+            tloss = entry.get("loss", entry.get("train_loss", ""))
+            eloss = entry.get("eval_loss", "")
+            if tloss or eloss:
+                lf.write(f"step={step}  train_loss={tloss}  eval_loss={eloss}\n")
+    print(f"  Training log → {log_path}")
 
     if not args.dry_run:
         out = Path(args.output_dir)
@@ -176,7 +209,7 @@ def main():
         model.save_pretrained(out / "adapter")
         tokenizer.save_pretrained(out / "adapter")
         print(f"\n[DONE] SimPO adapter saved → {out / 'adapter'}")
-        print(f"  Next: python training/compare_methods.py")
+        print(f"  Next: python training/run_ablations.py --winner simpo")
     else:
         print("\n[DRY RUN DONE] Setup verified.")
 

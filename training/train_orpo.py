@@ -60,7 +60,7 @@ ORPO_ARGS = dict(
     fp16=True,             # T4 does not support bf16
     logging_steps=10,
     save_strategy="epoch",
-    evaluation_strategy="epoch",
+    eval_strategy="epoch",
     seed=DEFAULT_SEED,
     report_to="none",
     remove_unused_columns=False,
@@ -170,7 +170,45 @@ def main():
     )
 
     print(f"\nStarting ORPO training ({'DRY RUN — 1 step' if args.dry_run else f'{args.epochs} epochs'})...")
+    import time
+    t0 = time.time()
     trainer.train()
+    wall_time = time.time() - t0
+
+    # Write training_run.log
+    log_path = ROOT / "training_run.log"
+    with open(log_path, "w") as lf:
+        lf.write("# ORPO Training Run Log\n")
+        lf.write(f"method: ORPO\n")
+        lf.write(f"model: {args.model}\n")
+        lf.write(f"dry_run: {args.dry_run}\n")
+        lf.write(f"wall_time_s: {wall_time:.1f}\n\n")
+        lf.write("## Hyperparameters\n")
+        lf.write(f"beta: {args.beta}\n")
+        lf.write(f"epochs: {args.epochs}\n")
+        lf.write(f"learning_rate: {args.lr}\n")
+        lf.write(f"lora_r: {LORA_CONFIG['r']}\n")
+        lf.write(f"lora_alpha: {LORA_CONFIG['lora_alpha']}\n")
+        lf.write(f"lora_dropout: {LORA_CONFIG['lora_dropout']}\n")
+        lf.write(f"batch_size: {ORPO_ARGS['per_device_train_batch_size']}\n")
+        lf.write(f"grad_accum: {ORPO_ARGS['gradient_accumulation_steps']}\n")
+        lf.write(f"effective_batch: {ORPO_ARGS['per_device_train_batch_size'] * ORPO_ARGS['gradient_accumulation_steps']}\n")
+        lf.write(f"lr_scheduler: {ORPO_ARGS['lr_scheduler_type']}\n")
+        lf.write(f"warmup_ratio: {ORPO_ARGS['warmup_ratio']}\n")
+        lf.write(f"max_length: {ORPO_ARGS['max_length']}\n")
+        lf.write(f"max_prompt_length: {ORPO_ARGS['max_prompt_length']}\n")
+        lf.write(f"fp16: {ORPO_ARGS['fp16']}\n")
+        lf.write(f"seed: {args.seed}\n")
+        lf.write(f"train_pairs: {len(train_ds)}\n")
+        lf.write(f"eval_pairs: {len(eval_ds)}\n\n")
+        lf.write("## Loss Curve (step, train_loss, eval_loss)\n")
+        for entry in trainer.state.log_history:
+            step = entry.get("step", "")
+            tloss = entry.get("loss", entry.get("train_loss", ""))
+            eloss = entry.get("eval_loss", "")
+            if tloss or eloss:
+                lf.write(f"step={step}  train_loss={tloss}  eval_loss={eloss}\n")
+    print(f"  Training log → {log_path}")
 
     if not args.dry_run:
         out = Path(args.output_dir)
@@ -179,7 +217,7 @@ def main():
         tokenizer.save_pretrained(out / "adapter")
         print(f"\n[DONE] ORPO adapter saved → {out / 'adapter'}")
         print(f"  Next: python training/train_simpo.py")
-        print(f"        python training/compare_methods.py")
+        print(f"        python training/run_ablations.py --winner orpo")
     else:
         print("\n[DRY RUN DONE] Setup verified. Re-run without --dry-run to train.")
 
