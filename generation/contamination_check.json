@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-04-29T14:48:29.673193Z",
-  "total_tasks": 200,
+  "timestamp": "2026-05-01T14:52:42.582208Z",
+  "total_tasks": 230,
   "partition": {
-    "train": 99,
-    "dev": 63,
-    "held_out": 38
+    "train": 127,
+    "dev": 71,
+    "held_out": 32
   },
   "all_checks_passed": true,
   "checks": {
@@ -14,18 +14,21 @@
       "status": "PASS",
       "violations": 0,
       "violation_details": [],
-      "held_out_tasks_checked": 38,
-      "train_dev_ngrams_indexed": 1944
+      "held_out_tasks_checked": 32,
+      "train_dev_ngrams_indexed": 1922
     },
     "2_embedding_similarity": {
       "check": "embedding_similarity",
-      "status": "SKIPPED",
-      "reason": "--skip-embedding flag set"
+      "model": "all-MiniLM-L6-v2",
+      "threshold": 0.85,
+      "status": "PASS",
+      "high_similarity_pairs": 0,
+      "pair_details": []
     },
     "3_time_shift_verification": {
       "check": "time_shift_verification",
       "status": "PASS",
-      "public_signal_tasks": 93,
+      "public_signal_tasks": 108,
       "missing_time_window": 0,
       "violation_details": []
     }

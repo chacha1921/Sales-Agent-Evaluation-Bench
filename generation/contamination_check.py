@@ -165,8 +165,13 @@ def stratified_partition(tasks: list) -> tuple:
         random.shuffle(group_list)
 
         n = len(group_list)
+        # Explicit 50/30/20: held-out assigned first to avoid rounding bias
+        n_held  = max(1, round(n * 0.20))
         n_train = round(n * 0.50)
-        n_dev   = round(n * 0.30)
+        n_dev   = n - n_train - n_held          # remainder → dev (absorbs rounding)
+        if n_dev < 0:                            # guard for tiny segments (n < 5)
+            n_dev = 0
+            n_train = n - n_held
         for group in group_list[:n_train]:
             train_tasks += group
         for group in group_list[n_train:n_train + n_dev]:
