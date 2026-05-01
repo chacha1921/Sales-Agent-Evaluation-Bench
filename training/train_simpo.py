@@ -21,7 +21,7 @@ Usage (Google Colab T4 — 16GB):
     !python training/train_simpo.py
 
     # Custom config:
-    !python training/train_simpo.py --model Qwen/Qwen2.5-1.5B-Instruct --gamma 1.0
+    !python training/train_simpo.py --model unsloth/Qwen3.5-0.8B-Instruct --gamma 1.0
 
     # Dry run:
     !python training/train_simpo.py --dry-run
@@ -37,7 +37,7 @@ PAIRS_FILE = ROOT / "training" / "training_data" / "path_b_dpo" / "preference_pa
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
-DEFAULT_MODEL   = "Qwen/Qwen2.5-0.5B-Instruct"
+DEFAULT_MODEL   = "unsloth/Qwen3.5-4B-Instruct"   # T4 options: 0.8B, 2B, 4B
 DEFAULT_OUT_DIR = str(ROOT / "runs" / "simpo")
 DEFAULT_SEED    = 42
 

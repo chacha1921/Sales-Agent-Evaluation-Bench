@@ -19,7 +19,7 @@ Usage:
     # Live mode (requires trained adapter + GPU)
     python training/run_ablations.py --winner orpo \
         --adapter runs/orpo/adapter \
-        --base-model Qwen/Qwen2.5-0.5B-Instruct
+        --base-model unsloth/Qwen3.5-4B-Instruct
 
     # Live mode with custom baseline cost reference
     python training/run_ablations.py --winner orpo --baseline-cost-per-task 0.0004
@@ -44,13 +44,15 @@ OUT_TRACES   = ROOT / "held_out_traces.jsonl"
 
 _DEFAULT_SEED = 42
 
-# Week 10 τ²-Bench score on file (from week10_artifacts/failure_taxonomy.md)
-# These are aggregate probe trigger rates converted to a 0-1 pass rate.
-# Informational only — no re-run this week.
-TAU2_WEEK10_SCORE = 0.79   # mean τ²-Bench retail score from trace_002 (methodology.md)
+# Week 10 τ²-Bench score on file — from week10_artifacts/score_log.json
+# Informational only; no re-run this week.
+TAU2_WEEK10_PASS_AT_1    = 0.7267   # pass@1 across 150 simulations, 30 tasks
+TAU2_WEEK10_CI           = (0.6504, 0.7917)   # 95% CI
+TAU2_WEEK10_COST_PER_SIM = 0.0199   # avg agent cost per simulation (USD)
+TAU2_WEEK10_P50_LATENCY  = 105.95   # p50 latency seconds
 
-# Week 10 Tenacious-Bench baseline score (from methodology.md §1 justification traces)
-# trace_002: 0.8/5.0, trace_012: 1.1/5.0 → mean ~2.5 out of 5.0 across all probe types
+# Week 10 Tenacious-Bench mean (mock baseline — real value set by --mock outputs)
+# trace_002: 0.8/5.0, trace_012: 1.1/5.0 → mean ~2.5 out of 5.0 across probe types
 WEEK10_TENACIOUS_MEAN = 2.5
 
 # ── Scoring ───────────────────────────────────────────────────────────────────
@@ -313,7 +315,7 @@ def main():
                         help="Which trained adapter to use (default: orpo)")
     parser.add_argument("--adapter",   default=None,
                         help="Path to LoRA adapter directory (default: runs/<winner>/adapter)")
-    parser.add_argument("--base-model", default="Qwen/Qwen2.5-0.5B-Instruct")
+    parser.add_argument("--base-model", default="unsloth/Qwen3.5-4B-Instruct")
     parser.add_argument("--mock",      action="store_true",
                         help="Use template outputs — no GPU or API required")
     parser.add_argument("--mock-llm",  action="store_true",
@@ -467,17 +469,20 @@ def main():
         ),
     }
 
-    # Delta C (informational — uses Week 10 τ²-Bench score on file)
+    # Delta C (informational — uses Week 10 τ²-Bench score on file, no re-run)
     delta_c = {
-        "tau2_week10_score": TAU2_WEEK10_SCORE,
-        "tau2_baseline": "retailbench-held-out (Week 10 run, not re-run this week)",
+        "tau2_week10_pass_at_1": TAU2_WEEK10_PASS_AT_1,
+        "tau2_week10_ci_95": list(TAU2_WEEK10_CI),
+        "tau2_week10_cost_per_sim_usd": TAU2_WEEK10_COST_PER_SIM,
+        "tau2_week10_p50_latency_s": TAU2_WEEK10_P50_LATENCY,
+        "tau2_source": "week10_artifacts/score_log.json (150 sims, 30 tasks, 5 trials/task)",
         "tenacious_trained_mean": trained_stats["mean"],
         "note": (
-            "Delta C is informational only. τ²-Bench retail was run in Week 10 "
-            "(score=0.79 on probe outcome metric). Tenacious-Bench measures different "
-            "dimensions (tone, signal grounding, banned phrases) so scores are not "
-            "directly comparable. Both are included to distinguish domain-specific "
-            "improvement from general capability change."
+            "Delta C is informational only. τ²-Bench retail (pass@1=0.7267) measures "
+            "task completion on retail simulations; Tenacious-Bench measures tone, "
+            "signal grounding, and banned-phrase compliance on B2B sales tasks. "
+            "Scores are not directly comparable. τ²-Bench is not re-run this week — "
+            "reusing on-file numbers per the Act IV specification."
         ),
     }
 
@@ -496,7 +501,7 @@ def main():
     sig_b = "✓ beats prompt-eng" if delta_b["significant"] else "✗ prompt-eng sufficient"
     print(f"Delta A (trained vs week10):  Δ={delta_a['observed_delta']:+.3f}  p={delta_a['p_value']:.3f}  {sig_a}")
     print(f"Delta B (trained vs prompt):  Δ={delta_b['observed_delta']:+.3f}  p={delta_b['p_value']:.3f}  {sig_b}")
-    print(f"Delta C (τ²-Bench, info only): week10={TAU2_WEEK10_SCORE}")
+    print(f"Delta C (τ²-Bench, info only): pass@1={TAU2_WEEK10_PASS_AT_1} CI={TAU2_WEEK10_CI}")
     print()
     print("Per failure mode (trained mean):")
     for mode, vals in sorted(mode_breakdown.items()):

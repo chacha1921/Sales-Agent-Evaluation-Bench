@@ -1,9 +1,9 @@
 {
   "meta": {
-    "timestamp": "2026-05-01T23:21:46.738774+00:00",
+    "timestamp": "2026-05-01T23:28:37.690503+00:00",
     "winner_method": "orpo",
     "adapter_path": "/Users/chalielijalem/Documents/Tenx_MCP/week11/Sales-Agent-Evaluation-Bench/runs/orpo/adapter",
-    "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "base_model": "unsloth/Qwen3.5-4B-Instruct",
     "mock_mode": true,
     "held_out_n": 32,
     "seed": 42
@@ -49,10 +49,16 @@
     "n_bootstrap": 2000
   },
   "delta_c": {
-    "tau2_week10_score": 0.79,
-    "tau2_baseline": "retailbench-held-out (Week 10 run, not re-run this week)",
+    "tau2_week10_pass_at_1": 0.7267,
+    "tau2_week10_ci_95": [
+      0.6504,
+      0.7917
+    ],
+    "tau2_week10_cost_per_sim_usd": 0.0199,
+    "tau2_week10_p50_latency_s": 105.95,
+    "tau2_source": "week10_artifacts/score_log.json (150 sims, 30 tasks, 5 trials/task)",
     "tenacious_trained_mean": 4.3809,
-    "note": "Delta C is informational only. \u03c4\u00b2-Bench retail was run in Week 10 (score=0.79 on probe outcome metric). Tenacious-Bench measures different dimensions (tone, signal grounding, banned phrases) so scores are not directly comparable. Both are included to distinguish domain-specific improvement from general capability change."
+    "note": "Delta C is informational only. \u03c4\u00b2-Bench retail (pass@1=0.7267) measures task completion on retail simulations; Tenacious-Bench measures tone, signal grounding, and banned-phrase compliance on B2B sales tasks. Scores are not directly comparable. \u03c4\u00b2-Bench is not re-run this week \u2014 reusing on-file numbers per the Act IV specification."
   },
   "cost_pareto": {
     "week10_baseline": {
