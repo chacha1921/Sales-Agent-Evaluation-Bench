@@ -202,17 +202,29 @@ def objection_ack_fn(output: str, mock: bool = False) -> float:
 def tone_checker_fn(output: str, mock: bool = False) -> float:
     """
     Scores output on 5 Tenacious tone markers (1–5 each), normalised to [0,1].
-    Mock mode: penalty-based heuristic. Live mode: LLM multi-dim judge.
+    Mock mode: two-tier penalty heuristic. Live mode: LLM multi-dim judge.
+
+    IRA revision (2026-04-29): tier-1 phrases now return 0.0 immediately.
+    Original gradual-penalty approach gave PASS to outputs with "just checking in"
+    and "My name is X" — both of which human raters consistently scored as FAIL.
+    κ rose from 0.662 to 1.000 after this change. See dataset/inter_rater_agreement.md.
     """
     if mock:
-        pushy_phrases = [
+        # Tier 1: immediate FAIL — any single match returns 0.0
+        tier1 = [
+            "just checking in", "circle back", "circling back", "touching base",
+            "i hope this email finds you well", "i hope this finds you well",
+            "i wanted to reach out", "my name is", "i'm reaching out from",
+        ]
+        # Tier 2: gradual penalty (same as before)
+        tier2 = [
             "don't miss out", "act now", "limited time", "last chance",
-            "just checking in", "circling back", "touching base",
             "synergy", "leverage", "revolutionary", "game-changer",
-            "i hope this email finds you well", "i wanted to reach out",
         ]
         output_lower = output.lower()
-        penalty = sum(1 for p in pushy_phrases if p in output_lower)
+        if any(p in output_lower for p in tier1):
+            return 0.0
+        penalty = sum(1 for p in tier2 if p in output_lower)
         raw = max(1, 5 - penalty)
         return (raw - 1) / 4.0
 

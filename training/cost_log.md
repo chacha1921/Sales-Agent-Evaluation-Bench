@@ -41,24 +41,29 @@ Costs are in USD. Model IDs are exact to enable reproducibility checks.
 
 ---
 
-## Day 4 (Planned) — Live Judge Filter
+## Day 0 — Pre-flight (2026-05-01)
 
-*To be filled when `judge_filter.py --live` is run. Estimated cost based on 200 tasks × ~200 input tokens + 15 output tokens at claude-haiku-4-5-20251001 rates ($0.80/MTok in, $4.00/MTok out):*
+| Timestamp | Item | Provider | Model / Resource | Cost (USD) |
+|---|---|---|---|---|
+| 2026-05-01 | τ²-Bench baseline run — 150 retail tasks | OpenAI / τ²-Bench | Agent API calls | $2.99 |
+| 2026-05-01 | Unsloth starter notebook — Qwen2.5-0.5B-Instruct dummy LoRA | Google Colab T4 | T4 GPU (free tier) | $0.00 |
+| 2026-05-01 | Adapter push to HuggingFace (`Chalie-lijalem/tenacious-test`) | HuggingFace | — | $0.00 |
+| **Day 0 Total** | | | | **$2.99** |
 
-| Item | Model | Calls (est.) | Input tokens (est.) | Output tokens (est.) | Cost (USD, est.) |
-|---|---|---|---|---|---|
-| Live judge filter | claude-haiku-4-5-20251001 | 200 | 40,000 | 3,000 | ~$0.044 |
+*Note: τ²-Bench run ($2.99) used for baseline evaluation. Traces replaced with Tenacious B2B traces — retail domain not applicable to project. Cost logged for budget accountability.*
 
 ---
 
-## Day 4 (Planned) — SFT Training Run
+## Day 4 (Planned) — Preference Pair Generation + Training
 
-*To be filled when training is run. Estimates for LoRA fine-tuning on Google Colab T4 (free tier) or paid L4 instance.*
+*To be filled when training is run on Colab T4.*
 
-| Item | Provider | Duration (est.) | Cost (USD, est.) |
-|---|---|---|---|
-| T4 Colab training (~40 steps/min, fp16) | Google Colab | ~45 min | $0.00 (free tier) |
-| L4 Colab training (bf16, if T4 OOM) | Google Colab Pro | ~20 min | ~$0.40 |
+| Item | Provider | Model / Resource | Duration (est.) | Cost (USD, est.) |
+|---|---|---|---|---|
+| `generate_preference_pairs.py --n-rejected 2` | Local | — (template) | <1 min | $0.00 |
+| ORPO training run — 198 pairs, 3 epochs | Google Colab T4 | Qwen2.5-0.5B-Instruct + LoRA | ~30 min | $0.00 (free tier) |
+| SimPO training run — 198 pairs, 3 epochs | Google Colab T4 | Qwen2.5-0.5B-Instruct + LoRA | ~30 min | $0.00 (free tier) |
+| Adapter push ×2 to HuggingFace | HuggingFace | — | — | $0.00 |
 
 ---
 
@@ -66,7 +71,9 @@ Costs are in USD. Model IDs are exact to enable reproducibility checks.
 
 | Item | Model | Calls (est.) | Input tokens (est.) | Output tokens (est.) | Cost (USD, est.) |
 |---|---|---|---|---|---|
-| Eval on held_out (38 tasks × 2 models) | claude-haiku-4-5-20251001 | 76 | 15,200 | 1,140 | ~$0.017 |
+| Dev eval — ORPO adapter (63 tasks) | claude-haiku-4-5-20251001 | 63 | 12,600 | 945 | ~$0.014 |
+| Dev eval — SimPO adapter (63 tasks) | claude-haiku-4-5-20251001 | 63 | 12,600 | 945 | ~$0.014 |
+| Held-out ablation (38 tasks × winner) | claude-haiku-4-5-20251001 | 38 | 7,600 | 570 | ~$0.008 |
 | Bootstrap CI (no API calls) | — | 0 | 0 | 0 | $0.00 |
 
 ---
@@ -76,12 +83,13 @@ Costs are in USD. Model IDs are exact to enable reproducibility checks.
 | Phase | Actual (USD) | Estimated remaining (USD) |
 |---|---|---|
 | Day 1–3 (complete) | $0.00 | — |
-| Day 4 live judge | — | ~$0.04 |
-| Day 4 training | — | $0.00–$0.40 |
-| Day 5–6 eval | — | ~$0.02 |
-| **Total** | **$0.00** | **~$0.06–$0.46** |
+| Day 0 pre-flight (τ²-Bench run) | $2.99 | — |
+| Day 4 training (Colab free tier) | — | $0.00 |
+| Day 5–6 eval (LLM judge calls) | — | ~$0.04 |
+| **Total** | **$2.99** | **~$0.04** |
+| **Grand total (est.)** | | **~$3.03** |
 
-*Well within the $10 budget stated in README.md.*
+*Well within the $10 budget stated in README.md. $2.99 already spent on τ²-Bench baseline.*
 
 ---
 
@@ -95,4 +103,4 @@ Costs are in USD. Model IDs are exact to enable reproducibility checks.
 
 ---
 
-*Log version: 1.0 | Last updated: 2026-04-29*
+*Log version: 1.1 | Last updated: 2026-05-01*

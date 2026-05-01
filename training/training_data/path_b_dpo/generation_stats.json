@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-01T09:30:17.723985Z",
+  "seed": 42,
+  "n_rejected": 2,
+  "tasks_used": 99,
+  "total_pairs": 198,
+  "out_file": "/Users/chalielijalem/Documents/Tenx_MCP/week11/Sales-Agent-Evaluation-Bench/training/training_data/path_b_dpo/preference_pairs.jsonl",
+  "failure_mode_breakdown": {
+    "signal_missing": 72,
+    "tone_drift": 66,
+    "formulaic": 26,
+    "trajectory": 26,
+    "constraint_violation": 8
+  }
+}
