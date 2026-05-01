@@ -11,8 +11,8 @@ Authoring record:
   Task IDs   : TB-0106 → TB-0195
   Model route (mock) : template expansion (no LLM)
   Model route (live) :
-    Hard seed variants (adv_weight=1.0) → claude-sonnet-4-6       via Anthropic API
-    Bulk variants (adv_weight=0.5)      → gemini/gemini-2.0-flash  via Google GenAI
+    Hard seed variants (adv_weight=1.0) → deepseek/deepseek-chat    via OpenRouter
+    Bulk variants (adv_weight=0.5)      → gemini/gemini-2.0-flash   via Google GenAI
   Leakage guard : generation_model logged per task; judge_model must differ
                   gemini tasks → judged by claude-haiku (different family)
 
@@ -26,7 +26,20 @@ import argparse
 import random
 import sys
 import os
+import urllib.request
 from pathlib import Path
+
+def _load_env():
+    env_file = Path(__file__).parent.parent.parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                if k.strip() not in os.environ:
+                    os.environ[k.strip()] = v.strip()
+
+_load_env()
 
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "generation"))
@@ -134,7 +147,7 @@ def build_mock_tasks():
                 f"Pain: {seed['pain']}."
             )
             constraints = [f"under {vc['word_limit']} words"] + vc["constraints_suffix"]
-            gen_model = "claude-sonnet-4-6" if vc["adv"] == 1.0 else "deepseek/deepseek-chat"
+            gen_model = "deepseek/deepseek-chat" if vc["adv"] == 1.0 else "gemini/gemini-2.0-flash"
             tasks.append(make_task(
                 tid=tid,
                 authoring_mode="multi_llm",
@@ -175,22 +188,32 @@ def _call_gemini(system_prompt: str, user_prompt: str) -> str:
     return response.text.strip()
 
 
-def _call_claude_sonnet(system_prompt: str, user_prompt: str) -> str:
-    """Call Claude Sonnet for adversarial (hard) task generation."""
-    import anthropic
-    client = anthropic.Anthropic()
-    msg = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=400,
-        temperature=0.7,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
+def _call_openrouter(model_id: str, system_prompt: str, user_prompt: str) -> str:
+    """Call a cheap model via OpenRouter for adversarial (hard) task generation."""
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise EnvironmentError("OPENROUTER_API_KEY not set")
+    payload = json.dumps({
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_prompt},
+        ],
+        "max_tokens": 400,
+        "temperature": 0.7,
+    }).encode()
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=payload,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
     )
-    return msg.content[0].text.strip()
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    return data["choices"][0]["message"]["content"].strip()
 
 
 def build_live_tasks(tasks_so_far):
-    """Call LLM APIs to generate tasks. Requires ANTHROPIC_API_KEY + GOOGLE_API_KEY."""
+    """Call LLM APIs to generate tasks. Requires OPENROUTER_API_KEY + GOOGLE_API_KEY."""
     tasks = list(tasks_so_far)
     tid = START_ID
     mock_tasks = build_mock_tasks()
@@ -205,10 +228,13 @@ def build_live_tasks(tasks_so_far):
                 f"Additional constraints: {', '.join(vc['constraints_suffix'])}"
             )
             is_adversarial = vc["adv"] == 1.0
-            gen_model_id = "claude-sonnet-4-6" if is_adversarial else "gemini/gemini-2.0-flash"
+            # Hard seeds: DeepSeek Chat via OpenRouter (cheap, good quality adversarial)
+            # Bulk seeds: Gemini Flash (very cheap, different model family for leakage prevention)
+            HARD_MODEL = "deepseek/deepseek-chat"
+            gen_model_id = HARD_MODEL if is_adversarial else "gemini/gemini-2.0-flash"
             try:
                 if is_adversarial:
-                    raw_text = _call_claude_sonnet(GENERATION_SYSTEM_PROMPT, seed_prompt)
+                    raw_text = _call_openrouter(HARD_MODEL, GENERATION_SYSTEM_PROMPT, seed_prompt)
                 else:
                     raw_text = _call_gemini(GENERATION_SYSTEM_PROMPT, seed_prompt)
 

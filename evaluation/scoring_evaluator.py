@@ -28,6 +28,18 @@ import time
 import random
 from pathlib import Path
 
+def _load_env():
+    env_file = Path(__file__).parent.parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                if k.strip() not in os.environ:
+                    os.environ[k.strip()] = v.strip()
+
+_load_env()
+
 import numpy as np
 
 random.seed(42)
@@ -256,18 +268,28 @@ def tone_checker_fn(output: str, mock: bool = False) -> float:
 
 # ─── LLM Judge Calls ─────────────────────────────────────────────────────────
 
-def _llm_judge_binary(output: str, prompt: str) -> float:
-    """Call LLM judge for binary YES/NO question. Returns 1.0 or 0.0."""
+def _gemini_call(user_content: str, max_tokens: int = 20) -> str:
+    """Shared Gemini Flash call for LLM judge dimensions. Temperature 0 for reproducibility."""
     try:
-        import anthropic
-        client = anthropic.Anthropic()
-        msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=5,
-            temperature=0.0,
-            messages=[{"role": "user", "content": f"{prompt}\n\nText to evaluate:\n{output}"}],
-        )
-        answer = msg.content[0].text.strip().upper()
+        import google.generativeai as genai
+    except ImportError:
+        raise ImportError("google-generativeai not installed. Run: pip install google-generativeai")
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        raise EnvironmentError("GOOGLE_API_KEY not set — run with --mock-llm or set GOOGLE_API_KEY")
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name="gemini-2.0-flash")
+    response = model.generate_content(
+        user_content,
+        generation_config=genai.types.GenerationConfig(temperature=0.0, max_output_tokens=max_tokens),
+    )
+    return response.text.strip()
+
+
+def _llm_judge_binary(output: str, prompt: str) -> float:
+    """Call Gemini Flash for binary YES/NO question. Returns 1.0 or 0.0."""
+    try:
+        answer = _gemini_call(f"{prompt}\n\nText to evaluate:\n{output}", max_tokens=5).upper()
         return 1.0 if answer.startswith("YES") else 0.0
     except Exception as e:
         print(f"[WARN] LLM judge error: {e}. Returning 0.5.", file=sys.stderr)
@@ -275,17 +297,9 @@ def _llm_judge_binary(output: str, prompt: str) -> float:
 
 
 def _llm_judge_score(output: str, prompt: str) -> float:
-    """Call LLM judge for multi-dimension scoring. Returns normalised [0,1]."""
+    """Call Gemini Flash for multi-dimension scoring. Returns normalised [0,1]."""
     try:
-        import anthropic
-        client = anthropic.Anthropic()
-        msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=20,
-            temperature=0.0,
-            messages=[{"role": "user", "content": f"{prompt}\n\nText to evaluate:\n{output}"}],
-        )
-        text = msg.content[0].text.strip()
+        text = _gemini_call(f"{prompt}\n\nText to evaluate:\n{output}", max_tokens=20)
         match = re.search(r'SCORES:\s*([\d,\s]+)', text)
         if match:
             scores = [int(x.strip()) for x in match.group(1).split(',') if x.strip().isdigit()]

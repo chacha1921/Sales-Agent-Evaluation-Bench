@@ -29,6 +29,19 @@ from datetime import datetime
 ROOT = Path(__file__).parent.parent
 
 
+def _load_env():
+    env_file = ROOT / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                if k.strip() not in os.environ:
+                    os.environ[k.strip()] = v.strip()
+
+_load_env()
+
+
 def run(cmd: list, label: str) -> int:
     print(f"\n{'─'*60}")
     print(f"[pipeline] {label}")
@@ -78,20 +91,18 @@ def model_breakdown() -> dict:
     return by_model
 
 
-def estimate_cost(n_gemini: int, n_haiku_judge: int) -> dict:
-    # Gemini 2.0 Flash: $0.075/M input tokens, $0.30/M output tokens
-    # Estimate: ~300 input + ~250 output per generation call
-    gemini_input_cost  = n_gemini * 300  / 1_000_000 * 0.075
-    gemini_output_cost = n_gemini * 250  / 1_000_000 * 0.30
-    # Claude Haiku 4.5: $0.80/M input, $4.00/M output
-    # Estimate: ~500 input + ~50 output per judge call
-    haiku_input_cost  = n_haiku_judge * 500 / 1_000_000 * 0.80
-    haiku_output_cost = n_haiku_judge * 50  / 1_000_000 * 4.00
+def estimate_cost(n_gemini_gen: int, n_deepseek_gen: int, n_judge: int) -> dict:
+    # Gemini 2.0 Flash gen: $0.075/M input, $0.30/M output (~300+250 tokens/call)
+    g_cost = n_gemini_gen  * (300 * 0.075 + 250 * 0.30) / 1_000_000
+    # DeepSeek Chat (OpenRouter): $0.14/M input, $0.28/M output (~300+250 tokens/call)
+    d_cost = n_deepseek_gen * (300 * 0.14  + 250 * 0.28) / 1_000_000
+    # Judge: mix of Gemini Flash + DeepSeek (~500+50 tokens/call) — estimate Gemini rate
+    j_cost = n_judge * (500 * 0.075 + 50 * 0.30) / 1_000_000
     return {
-        "gemini_generation": round(gemini_input_cost + gemini_output_cost, 4),
-        "haiku_judging":     round(haiku_input_cost  + haiku_output_cost,  4),
-        "total_estimated":   round(gemini_input_cost + gemini_output_cost +
-                                    haiku_input_cost  + haiku_output_cost, 4),
+        "gemini_generation":   round(g_cost, 4),
+        "deepseek_generation": round(d_cost, 4),
+        "judge_calls":         round(j_cost, 4),
+        "total_estimated":     round(g_cost + d_cost + j_cost, 4),
     }
 
 
@@ -104,8 +115,9 @@ def append_cost_log(cost: dict, n_tasks: int, mode: str) -> None:
         f"\n## Live Generation Run ({today})\n\n"
         f"| Item | Model | Calls (est.) | Cost (USD, est.) |\n"
         f"|---|---|---|---|\n"
-        f"| multi_llm_synthesis --{mode} (bulk) | gemini-2.0-flash | 72 | ${cost['gemini_generation']:.4f} |\n"
-        f"| judge_filter --live ({n_tasks} tasks) | claude-haiku-4-5-20251001 | {n_tasks} | ${cost['haiku_judging']:.4f} |\n"
+        f"| multi_llm bulk generation | gemini/gemini-2.0-flash | 72 | ${cost['gemini_generation']:.4f} |\n"
+        f"| multi_llm hard seed generation | deepseek/deepseek-chat (OpenRouter) | 18 | ${cost['deepseek_generation']:.4f} |\n"
+        f"| judge_filter --live ({n_tasks} tasks) | gemini-2.0-flash + deepseek-chat | {n_tasks} | ${cost['judge_calls']:.4f} |\n"
         f"| **Run total** | | | **${cost['total_estimated']:.4f}** |\n"
     )
     with log_path.open("a") as f:
@@ -132,7 +144,7 @@ def main():
     mode_label = "live" if args.live else "mock"
 
     if args.live:
-        missing = [k for k in ["ANTHROPIC_API_KEY", "GOOGLE_API_KEY"] if not os.environ.get(k)]
+        missing = [k for k in ["GOOGLE_API_KEY", "OPENROUTER_API_KEY"] if not os.environ.get(k)]
         if missing:
             print(f"[ERROR] Missing environment variables: {', '.join(missing)}")
             sys.exit(1)
@@ -173,11 +185,12 @@ def main():
 
     # ── Step 5: Cost log ───────────────────────────────────────────────────────
     if args.live:
-        cost = estimate_cost(n_gemini=72, n_haiku_judge=total)
+        cost = estimate_cost(n_gemini_gen=72, n_deepseek_gen=18, n_judge=total)
         print(f"\n  Estimated API cost this run:")
-        print(f"    Gemini generation (72 bulk tasks): ${cost['gemini_generation']:.4f}")
-        print(f"    Haiku judging ({total} tasks):      ${cost['haiku_judging']:.4f}")
-        print(f"    Total estimated:                   ${cost['total_estimated']:.4f}")
+        print(f"    Gemini Flash generation (72 bulk):   ${cost['gemini_generation']:.4f}")
+        print(f"    DeepSeek Chat generation (18 hard):  ${cost['deepseek_generation']:.4f}")
+        print(f"    Judge calls ({total} tasks):          ${cost['judge_calls']:.4f}")
+        print(f"    Total estimated:                      ${cost['total_estimated']:.4f}")
         append_cost_log(cost, total, mode_label)
 
     if steps_failed:
