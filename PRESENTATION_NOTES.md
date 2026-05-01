@@ -3,6 +3,24 @@
 
 ---
 
+## 0. Implementation Decisions Log (what changed and why)
+
+| Area | Original | Changed To | Why |
+|---|---|---|---|
+| Generation model | `google.generativeai` (deprecated) + `gemini-2.0-flash` | `google.genai` SDK + `gemini-2.5-flash` | Old SDK end-of-life; `gemini-2.0-flash` returned 404 NOT_FOUND |
+| Output truncation | `max_output_tokens=400` | `max_output_tokens=1500` + `thinking_budget=0` | JSON contexts were cut off mid-string; thinking tokens consumed output budget |
+| Multi-LLM contamination | No seed grouping | `seed_id` (S01–S18) in `_profile_key()` | Gemini generates unique text per variant; without grouping, variants split across partitions → n-gram FAIL + embedding FAIL |
+| Task ID collision | adversarial TB-0166–0200 | adversarial TB-0196–0230 | Expanded multi_llm to 90 tasks (TB-0106–0195) caused 30 duplicate IDs in filtered.jsonl |
+| IRA Round 1 | κ=0.662 on `tone_checker_fn` | Two-tier system (tier-1 = immediate FAIL) | Mock heuristic gave partial credit to "just checking in"; below 0.70 threshold |
+| Training path | Path A (SFT) in methodology_rationale.md | Path B (ORPO + SimPO) | 40–60% trigger rate = inconsistency, not capability gap; SFT teaches new behavior, not preference consistency |
+| Backbone model | `Qwen/Qwen2.5-0.5B-Instruct` | `unsloth/Qwen3-4B-bnb-4bit` | 0.5B too small; Qwen3.5 IDs don't exist on HuggingFace (404 error in Colab) |
+| LoRA alpha | 32 (2× r) | 16 (= r) | Unsloth Qwen3 guide: alpha == r |
+| LoRA dropout | 0.05 | 0 | Unsloth recommendation |
+| Qwen3 thinking | Not handled | `enable_thinking=False` | Qwen3 outputs `<think>` tokens by default; suppressed for sales emails |
+| seq length | 512 | 2048 | Unsloth guide + multi-constraint prompts exceed 512 tokens |
+
+---
+
 ## 1. The Problem We Solved
 
 The Week 10 evaluation of Tenacious's B2B sales agent revealed:
@@ -111,17 +129,44 @@ The Week 10 evaluation of Tenacious's B2B sales agent revealed:
 
 ## 4. Model Fine-Tuning
 
-### Backbone: Qwen3.5 on Google Colab T4
+### Backbone: Qwen3 on Google Colab T4
+
+#### Implementation trace — what we tried and why it changed
+
+**Attempt 1 — `Qwen/Qwen2.5-0.5B-Instruct`**
+Initial default in all training scripts. Too small (0.5B) for nuanced tone compliance on B2B email tasks. Changed before first live run.
+
+**Attempt 2 — `unsloth/Qwen3.5-4B-Instruct`**
+Updated to Qwen3.5 after reading the Unsloth Qwen3.5 fine-tuning guide which listed 0.8B / 2B / 4B as T4-compatible. Hit this error in Colab:
+```
+RuntimeError: Unsloth: No config file found - are you sure the `model_name` is correct?
+```
+Root cause: `unsloth/Qwen3.5-4B-Instruct` does not exist on HuggingFace. The Unsloth documentation only showed large models (27B, 35B MoE); the small-model page used the name loosely. Confirmed by checking HuggingFace directly.
+
+**Attempt 3 — `unsloth/Qwen3-4B-bnb-4bit` ✓ (current)**
+Confirmed working on HuggingFace (97K+ downloads/month). Qwen3 is the same generation as what the docs described; `bnb-4bit` suffix = pre-quantized by Unsloth, loads faster than runtime quantization. Also discovered Qwen3 has a **thinking mode** that outputs `<think>...</think>` tokens — added `enable_thinking=False` to all `apply_chat_template` calls to suppress this for sales email generation.
 
 | Model | VRAM (4-bit) | Use case |
 |---|---|---|
-| `unsloth/Qwen3.5-0.8B-Instruct` | ~3 GB | Fast iteration / dry runs |
-| `unsloth/Qwen3.5-2B-Instruct` | ~5 GB | Mid-size sweep |
-| `unsloth/Qwen3.5-4B-Instruct` | ~8 GB | **Default — best quality that fits T4** |
+| `unsloth/Qwen3-0.6B-bnb-4bit` | ~2 GB | Fast iteration / dry runs |
+| `unsloth/Qwen3-1.7B-bnb-4bit` | ~4 GB | Mid-size sweep |
+| `unsloth/Qwen3-4B-bnb-4bit` | ~8 GB | **Default — best quality that fits T4** |
 
-All fit within T4's 16GB VRAM with 4-bit quantization.
+### LoRA Configuration (aligned with Unsloth Qwen3 guide)
 
-### LoRA Configuration (aligned with Unsloth Qwen3.5 guide)
+#### Implementation trace
+
+**Initial config:**
+- `lora_alpha=32` (2× r), `lora_dropout=0.05` — standard defaults from generic LoRA tutorials
+- Missing `use_gradient_checkpointing`, `random_state`, `optim`
+
+**After reading Unsloth Qwen3 guide:**
+- `lora_alpha=16` (= r) — Unsloth recommends alpha == r for Qwen3
+- `lora_dropout=0` — Unsloth explicitly prefers 0
+- Added `use_gradient_checkpointing="unsloth"` — Unsloth's custom memory optimization, required for T4
+- Added `random_state=3407` — Unsloth's recommended seed for reproducibility
+- Added `optim="adamw_8bit"` — 8-bit Adam saves ~2GB VRAM on T4
+- `max_seq_length=512 → 2048`, `max_prompt_length=256 → 1024` — 512 was too short for multi-turn sales conversations; Unsloth guide uses 2048
 
 ```python
 r = 16
@@ -219,7 +264,7 @@ python training/run_ablations.py \
 | Preference pairs | 254 (127 tasks × 2) |
 | IRA κ (Round 2) | 1.000 on all rater pairs |
 | Contamination checks | 3/3 PASS |
-| Training backbone | Qwen3.5-4B-Instruct (T4, 4-bit) |
+| Training backbone | Qwen3-4B-bnb-4bit (T4, pre-quantized) |
 | LoRA rank | r=16, α=16 |
 | Training method | ORPO (β=0.1) vs SimPO (β=2.0, γ=1.0) |
 | Delta A requirement | p < 0.05, Δ > 0 on held_out (n=32) |

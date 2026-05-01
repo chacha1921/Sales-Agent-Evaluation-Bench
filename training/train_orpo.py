@@ -15,7 +15,7 @@ Usage (Google Colab T4 — 16GB):
     !python training/train_orpo.py
 
     # Custom model or output dir:
-    !python training/train_orpo.py --model unsloth/Qwen3.5-0.8B-Instruct --output-dir runs/orpo_small
+    !python training/train_orpo.py --model unsloth/Qwen3-0.6B-bnb-4bit --output-dir runs/orpo_small
 
     # Dry run (1 step, verifies setup):
     !python training/train_orpo.py --dry-run
@@ -33,7 +33,7 @@ DEV_FILE   = ROOT / "dataset" / "tenacious_bench_v0.1" / "dev" / "tasks.jsonl"
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
-DEFAULT_MODEL   = "unsloth/Qwen3.5-4B-Instruct"   # T4 options: 0.8B, 2B, 4B
+DEFAULT_MODEL   = "unsloth/Qwen3-4B-bnb-4bit"    # T4 options: Qwen3-0.6B, 1.7B, 4B (bnb-4bit loads faster)
 DEFAULT_OUT_DIR = str(ROOT / "runs" / "orpo")
 DEFAULT_SEED    = 42
 
@@ -82,10 +82,19 @@ def to_hf_dataset(pairs: list, tokenizer):
     """Convert preference pairs to HuggingFace Dataset for ORPOTrainer."""
     from datasets import Dataset
 
-    def format_messages(messages: list) -> str:
-        return tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=False
-        )
+    def format_messages(messages: list, add_gen: bool = False) -> str:
+        # enable_thinking=False: disable Qwen3 <think> tokens for sales email generation
+        try:
+            return tokenizer.apply_chat_template(
+                messages, tokenize=False,
+                add_generation_prompt=add_gen,
+                enable_thinking=False,
+            )
+        except TypeError:
+            # older tokenizer versions don't have enable_thinking
+            return tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=add_gen
+            )
 
     rows = []
     for p in pairs:
@@ -109,7 +118,7 @@ def to_hf_dataset(pairs: list, tokenizer):
 def main():
     parser = argparse.ArgumentParser(description="ORPO fine-tuning for Tenacious")
     parser.add_argument("--model",      default=DEFAULT_MODEL,
-                        help="HuggingFace model ID (T4 options: unsloth/Qwen3.5-{0.8B,2B,4B}-Instruct)")
+                        help="T4 options: unsloth/Qwen3-{0.6B,1.7B,4B}-bnb-4bit")
     parser.add_argument("--output-dir", default=DEFAULT_OUT_DIR)
     parser.add_argument("--epochs",     type=int,   default=3)
     parser.add_argument("--lr",         type=float, default=5e-5)

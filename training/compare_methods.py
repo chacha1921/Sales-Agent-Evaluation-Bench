@@ -9,7 +9,7 @@ Usage:
     python training/compare_methods.py \
         --orpo-adapter  runs/orpo/adapter \
         --simpo-adapter runs/simpo/adapter \
-        --base-model    unsloth/Qwen3.5-4B-Instruct
+        --base-model    unsloth/Qwen3-4B-bnb-4bit
 
     # Mock mode (no GPU — uses random scores to test the comparison logic)
     python training/compare_methods.py --mock
@@ -114,7 +114,10 @@ def generate_outputs(tasks: list, adapter_path: str, base_model: str) -> list:
             {"role": "system",  "content": "You are a B2B sales assistant for Tenacious. Write direct, signal-led sales messages with no banned phrases."},
             {"role": "user",    "content": f"Write a {task_type.replace('_', ' ')} for this prospect.\n\nContext:\n{ctx}\n\nConstraints:\n{constraint_str}\n\nWrite only the message body."},
         ]
-        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        try:
+            prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        except TypeError:
+            prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
 
         with __import__("torch").no_grad():
@@ -170,7 +173,7 @@ def main():
     parser = argparse.ArgumentParser(description="Compare ORPO vs SimPO on dev split")
     parser.add_argument("--orpo-adapter",  default=str(ROOT / "runs" / "orpo" / "adapter"))
     parser.add_argument("--simpo-adapter", default=str(ROOT / "runs" / "simpo" / "adapter"))
-    parser.add_argument("--base-model",    default="unsloth/Qwen3.5-4B-Instruct")
+    parser.add_argument("--base-model",    default="unsloth/Qwen3-4B-bnb-4bit")
     parser.add_argument("--mock",          action="store_true",
                         help="Use template outputs (no GPU needed)")
     parser.add_argument("--seed",          type=int, default=_DEFAULT_SEED)

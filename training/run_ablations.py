@@ -19,7 +19,7 @@ Usage:
     # Live mode (requires trained adapter + GPU)
     python training/run_ablations.py --winner orpo \
         --adapter runs/orpo/adapter \
-        --base-model unsloth/Qwen3.5-4B-Instruct
+        --base-model unsloth/Qwen3-4B-bnb-4bit
 
     # Live mode with custom baseline cost reference
     python training/run_ablations.py --winner orpo --baseline-cost-per-task 0.0004
@@ -235,7 +235,10 @@ def live_trained_output(task: dict, model, tokenizer) -> tuple[str, float]:
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user",   "content": _make_user_prompt(task)},
     ]
-    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    try:
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+    except TypeError:
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
     t0 = time.time()
     with torch.no_grad():
@@ -254,7 +257,10 @@ def live_baseline_output(task: dict, model, tokenizer, system_prompt: str) -> tu
         {"role": "system", "content": system_prompt},
         {"role": "user",   "content": _make_user_prompt(task)},
     ]
-    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    try:
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+    except TypeError:
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
     t0 = time.time()
     with torch.no_grad():
@@ -315,7 +321,7 @@ def main():
                         help="Which trained adapter to use (default: orpo)")
     parser.add_argument("--adapter",   default=None,
                         help="Path to LoRA adapter directory (default: runs/<winner>/adapter)")
-    parser.add_argument("--base-model", default="unsloth/Qwen3.5-4B-Instruct")
+    parser.add_argument("--base-model", default="unsloth/Qwen3-4B-bnb-4bit")
     parser.add_argument("--mock",      action="store_true",
                         help="Use template outputs — no GPU or API required")
     parser.add_argument("--mock-llm",  action="store_true",

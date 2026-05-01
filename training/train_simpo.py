@@ -21,7 +21,7 @@ Usage (Google Colab T4 — 16GB):
     !python training/train_simpo.py
 
     # Custom config:
-    !python training/train_simpo.py --model unsloth/Qwen3.5-0.8B-Instruct --gamma 1.0
+    !python training/train_simpo.py --model unsloth/Qwen3-0.6B-bnb-4bit --gamma 1.0
 
     # Dry run:
     !python training/train_simpo.py --dry-run
@@ -37,7 +37,7 @@ PAIRS_FILE = ROOT / "training" / "training_data" / "path_b_dpo" / "preference_pa
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
-DEFAULT_MODEL   = "unsloth/Qwen3.5-4B-Instruct"   # T4 options: 0.8B, 2B, 4B
+DEFAULT_MODEL   = "unsloth/Qwen3-4B-bnb-4bit"    # T4 options: Qwen3-0.6B, 1.7B, 4B (bnb-4bit)
 DEFAULT_OUT_DIR = str(ROOT / "runs" / "simpo")
 DEFAULT_SEED    = 42
 
@@ -87,10 +87,17 @@ def load_pairs(path):
 def to_hf_dataset(pairs, tokenizer):
     from datasets import Dataset
 
-    def fmt(messages):
-        return tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=False
-        )
+    def fmt(messages, add_gen=False):
+        try:
+            return tokenizer.apply_chat_template(
+                messages, tokenize=False,
+                add_generation_prompt=add_gen,
+                enable_thinking=False,
+            )
+        except TypeError:
+            return tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=add_gen
+            )
 
     rows = []
     for p in pairs:
