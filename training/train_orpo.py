@@ -39,22 +39,24 @@ DEFAULT_SEED    = 42
 
 LORA_CONFIG = dict(
     r=16,
-    lora_alpha=32,
+    lora_alpha=16,                  # unsloth: alpha == r
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                     "gate_proj", "up_proj", "down_proj"],
-    lora_dropout=0.05,
+    lora_dropout=0,                 # unsloth: 0 preferred
     bias="none",
-    task_type="CAUSAL_LM",
+    use_gradient_checkpointing="unsloth",   # unsloth memory optimisation
+    random_state=3407,
 )
 
 ORPO_ARGS = dict(
     beta=0.1,              # ORPO odds-ratio weight (λ in the paper)
-    max_length=512,
-    max_prompt_length=256,
+    max_length=2048,
+    max_prompt_length=1024,
     per_device_train_batch_size=4,
     gradient_accumulation_steps=4,  # effective batch = 16
     num_train_epochs=3,
     learning_rate=5e-5,
+    optim="adamw_8bit",             # unsloth: 8-bit Adam saves memory
     lr_scheduler_type="cosine",
     warmup_ratio=0.1,
     fp16=True,             # T4 does not support bf16
@@ -135,12 +137,12 @@ def main():
     print(f"\nLoading {args.model} with 4-bit quantization...")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=args.model,
-        max_seq_length=512,
-        dtype=None,         # auto-detect
+        max_seq_length=2048,
+        dtype=None,         # auto-detect (bf16 on A100, fp16 on T4)
         load_in_4bit=True,
     )
     model = FastLanguageModel.get_peft_model(model, **LORA_CONFIG)
-    print(f"  LoRA params: r={LORA_CONFIG['r']}, alpha={LORA_CONFIG['lora_alpha']}")
+    print(f"  LoRA params: r={LORA_CONFIG['r']}, alpha={LORA_CONFIG['lora_alpha']}, dropout={LORA_CONFIG['lora_dropout']}")
 
     # ── Load data ─────────────────────────────────────────────────────────────
     pairs = load_pairs(PAIRS_FILE)

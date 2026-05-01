@@ -95,7 +95,7 @@ def generate_outputs(tasks: list, adapter_path: str, base_model: str) -> list:
     print(f"  Loading adapter from {adapter_path}...")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=base_model,
-        max_seq_length=512,
+        max_seq_length=2048,
         dtype=None,
         load_in_4bit=True,
     )

@@ -349,7 +349,7 @@ def main():
             print(f"\nLoading base model {args.base_model}...")
             base_model_obj, base_tokenizer = FastLanguageModel.from_pretrained(
                 model_name=args.base_model,
-                max_seq_length=512, dtype=None, load_in_4bit=True,
+                max_seq_length=2048, dtype=None, load_in_4bit=True,
             )
             print(f"Loading trained adapter {adapter_path}...")
             trained_model = PeftModel.from_pretrained(base_model_obj, adapter_path)
