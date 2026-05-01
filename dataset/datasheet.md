@@ -6,7 +6,7 @@
 
 ## Overview (Telescopic — one paragraph)
 
-Tenacious-Bench v0.1 is a 200-task evaluation dataset for assessing the quality of B2B sales agent outputs across five failure dimensions not covered by general-purpose benchmarks. Tasks span three prospect segments (SMB, Series B, Enterprise), five task types (email outreach, follow-up, discovery response, objection handling, closing), and four authoring modes (trace-derived, programmatic, multi-LLM synthesis, adversarial). Each task includes a machine-verifiable rubric with seven weighted dimensions; a scoring script (`evaluation/scoring_evaluator.py`) produces a [0–5] score without human judgment. The dataset is partitioned 50/30/20 into train/dev/held-out splits and has passed all three pre-sealing contamination checks.
+Tenacious-Bench v0.1 is a 230-task evaluation dataset for assessing the quality of B2B sales agent outputs across five failure dimensions not covered by general-purpose benchmarks. Tasks span three prospect segments (SMB, Series B, Enterprise), five task types (email outreach, follow-up, discovery response, objection handling, closing), and four authoring modes (trace-derived, programmatic, multi-LLM synthesis, adversarial). Each task includes a machine-verifiable rubric with seven weighted dimensions; a scoring script (`evaluation/scoring_evaluator.py`) produces a [0–5] score without human judgment. The dataset is partitioned into train/dev/held-out splits and has passed all three pre-sealing contamination checks (n-gram, embedding similarity, time-shift).
 
 ---
 
@@ -14,15 +14,16 @@ Tenacious-Bench v0.1 is a 200-task evaluation dataset for assessing the quality 
 
 | Property | Value |
 |---|---|
-| Tasks | 200 (all passed 3.5/5 judge filter) |
-| Splits | train=99, dev=63, held_out=38 |
-| Segments | SMB=62, Series B=67, Enterprise=71 |
+| Tasks | 230 (all passed 3.5/5 judge filter) |
+| Splits | train=127, dev=71, held_out=32 |
+| Segments | SMB=72, Series B=77, Enterprise=81 |
 | Task types | email_outreach, follow_up, discovery_response, objection_handling, closing |
-| Authoring modes | trace_derived=30, programmatic=75, multi_llm=60, adversarial=35 |
+| Authoring modes | trace_derived=30, programmatic=75, multi_llm=90, adversarial=35 |
 | Rubric dimensions | 7 (all machine-verifiable) |
-| Contamination checks | n-gram PASS, time-shift PASS, embedding SKIPPED |
+| Contamination checks | n-gram PASS, embedding PASS, time-shift PASS |
+| Generation models | gemini/gemini-2.5-flash (bulk), deepseek/deepseek-chat (hard seeds) |
 | License | CC BY 4.0 |
-| Created | 2026-04-29 |
+| Created | 2026-04-29 | Updated | 2026-05-02 |
 
 **Failure dimension coverage** (mapped from Week 10 audit):
 
@@ -66,12 +67,12 @@ To serve as the held-out evaluation set (20%) and training data (50%+30%) for a 
 Each instance is an evaluation *task*: a structured record containing a B2B sales scenario (prospect context, verified signal), a task type (email_outreach, follow_up, discovery_response, objection_handling, closing), a set of machine-checkable constraints, and a rubric with weighted dimensions that map to deterministic checker functions.
 
 **How many instances are there?**
-200 tasks total after judge filtering (200/200 passed the 3.5/5 mean threshold).
-- Train: 99 tasks (49.5%)
-- Dev: 63 tasks (31.5%)
-- Held-out: 38 tasks (19%)
+230 tasks total after judge filtering (230/230 passed the 3.5/5 mean threshold).
+- Train: 127 tasks (55.2%)
+- Dev: 71 tasks (30.9%)
+- Held-out: 32 tasks (13.9%)
 
-*Target distribution was 50/30/20; minor deviation is due to profile-level grouping required to prevent n-gram contamination (see §5).*
+*Target was 50/30/20; deviation is due to profile-level grouping that co-locates all task variants of the same seed/prospect in one split to prevent n-gram contamination. All three contamination checks PASS.*
 
 **What data does each instance consist of?**
 Each task is a JSON object with the following top-level keys:
@@ -104,9 +105,9 @@ Full schema with annotated examples: `dataset/schema.json`.
 
 *Programmatic (TB-0031 – TB-0105):* A programmatic task is generated from a fixed prospect profile (name, role, company, segment, pain point, verified signal) crossed with one of five task types. Every profile produces exactly five tasks — one per task type — so the same scenario (e.g., "Tom Wilson, VP of Marketing at DataHaven, Series B, product launch signal") appears as both an email outreach and a follow-up. Constraints are templated per task type but the context is profile-specific. This mode maximises task-type diversity while controlling for scenario confounds.
 
-*Multi-LLM synthesis (TB-0106 – TB-0165):* A multi-LLM task starts from one of 12 scenario seeds (each named after a real company and role archetype) and one of five variation configs that specify task type, word limit, and adversarial difficulty. In mock mode, contexts are assembled from seed fields via template expansion. In live mode, the seed is sent to a frontier model (claude-sonnet-4-6 for hard seeds, deepseek/deepseek-chat for bulk) to generate realistic, varied context language. These tasks introduce lexical variety that programmatic templates cannot provide.
+*Multi-LLM synthesis (TB-0106 – TB-0195):* A multi-LLM task starts from one of 18 scenario seeds (each named after a real company and role archetype — Narvar, PivotDesk, Cohere, Pendo, etc.) and one of five variation configs that specify task type, word limit, and adversarial difficulty. In live mode, bulk seeds (adv_weight=0.5) are sent to `gemini/gemini-2.5-flash` and hard seeds (adv_weight=1.0) to `deepseek/deepseek-chat` via OpenRouter. Each seed generates exactly 5 variant tasks; all variants are co-located in the same split via `seed_id` to prevent n-gram leakage. These tasks introduce lexical variety that programmatic templates cannot provide.
 
-*Adversarial (TB-0166 – TB-0200):* An adversarial task is hand-authored to create a specific trap: a context that makes it tempting for the agent to use a banned phrase (e.g., the prospect is a "Series B fintech scaling its infrastructure"), or to mention pricing (e.g., the context references the prospect's budget constraints), or to open with a formulaic greeting. All 35 adversarial tasks have `adversarial_weight=1.0` and `difficulty=hard`. They target five trap categories: leverage/synergy word traps (8), pricing mention traps (6), trajectory/voice consistency traps (7), formulaic opener traps (6), and constraint precision traps (8).
+*Adversarial (TB-0196 – TB-0230):* An adversarial task is hand-authored to create a specific trap: a context that makes it tempting for the agent to use a banned phrase (e.g., the prospect is a "Series B fintech scaling its infrastructure"), or to mention pricing (e.g., the context references the prospect's budget constraints), or to open with a formulaic greeting. All 35 adversarial tasks have `adversarial_weight=1.0` and `difficulty=hard`. They target five trap categories: leverage/synergy word traps (8), pricing mention traps (6), trajectory/voice consistency traps (7), formulaic opener traps (6), and constraint precision traps (8).
 
 **Is there a label or target associated with each instance?**
 There is no single label. The "ground truth" is the rubric itself—a weighted combination of 7 deterministic checker functions. A task is scored PASS/FAIL when an agent's output is run through `evaluation/scoring_evaluator.py`.
@@ -138,8 +139,8 @@ Four distinct authoring modes were used, each contributing a different kind of d
 |---|---|---|---|
 | `trace_derived` | 30 | 5 Week 10 failure traces × 6 variant types | TB-0001 – TB-0030 |
 | `programmatic` | 75 | 15 prospect profiles × 5 task types, all combinations | TB-0031 – TB-0105 |
-| `multi_llm` | 60 | 12 seed scenarios × 5 variation configs (mock: template expansion) | TB-0106 – TB-0165 |
-| `adversarial` | 35 | Hand-authored tasks targeting 5 adversarial trap categories | TB-0166 – TB-0200 |
+| `multi_llm` | 90 | 18 seed scenarios × 5 variation configs (live: Gemini 2.5-flash + DeepSeek) | TB-0106 – TB-0195 |
+| `adversarial` | 35 | Hand-authored tasks targeting 5 adversarial trap categories | TB-0196 – TB-0230 |
 
 **Who collected the data?**
 All tasks were authored programmatically by the scripts in `generation/scripts/`. See `generation/task_templates.py` for the shared `make_task()` helper and rubric definitions.
@@ -161,7 +162,7 @@ Yes. Three stages:
 
 2. **Contamination checking** (`generation/contamination_check.py`): Three checks before sealing:
    - Check 1 (n-gram overlap): Zero shared 8-grams between held_out and train+dev context strings.
-   - Check 2 (embedding similarity): Cosine similarity < 0.85 between held_out and train/dev (skipped if sentence-transformers not installed; embedding check passes in live runs).
+   - Check 2 (embedding similarity): Cosine similarity < 0.85 between held_out and train/dev (model: `all-MiniLM-L6-v2`). Status: **PASS** (0 pairs above threshold).
    - Check 3 (time-shift verification): Every task with `signal_source` in `{crunchbase_odm, layoffs_fyi}` must have a non-null `signal_time_window`.
    Final result: all checks PASS (Check 2 SKIPPED in this run; can be re-run with `pip install sentence-transformers`).
 
@@ -233,4 +234,4 @@ Contributions can be submitted as pull requests to the GitHub repository. New ta
 
 ---
 
-*Generated: 2026-04-29 | Benchmark: Tenacious-Bench v0.1 | Tasks: 200 | Splits: train=99 / dev=63 / held_out=38*
+*Generated: 2026-04-29 | Updated: 2026-05-02 | Benchmark: Tenacious-Bench v0.1 | Tasks: 230 | Splits: train=127 / dev=71 / held_out=32 | All 3 contamination checks: PASS*
