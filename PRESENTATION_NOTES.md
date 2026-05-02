@@ -5,19 +5,44 @@
 
 ## 0. Implementation Decisions Log (what changed and why)
 
-| Area | Original | Changed To | Why |
+Full chronological trace of every issue hit and how it was resolved.
+
+---
+
+### Act II — Dataset Generation Issues
+
+| # | Issue | Error / Symptom | Fix |
 |---|---|---|---|
-| Generation model | `google.generativeai` (deprecated) + `gemini-2.0-flash` | `google.genai` SDK + `gemini-2.5-flash` | Old SDK end-of-life; `gemini-2.0-flash` returned 404 NOT_FOUND |
-| Output truncation | `max_output_tokens=400` | `max_output_tokens=1500` + `thinking_budget=0` | JSON contexts were cut off mid-string; thinking tokens consumed output budget |
-| Multi-LLM contamination | No seed grouping | `seed_id` (S01–S18) in `_profile_key()` | Gemini generates unique text per variant; without grouping, variants split across partitions → n-gram FAIL + embedding FAIL |
-| Task ID collision | adversarial TB-0166–0200 | adversarial TB-0196–0230 | Expanded multi_llm to 90 tasks (TB-0106–0195) caused 30 duplicate IDs in filtered.jsonl |
-| IRA Round 1 | κ=0.662 on `tone_checker_fn` | Two-tier system (tier-1 = immediate FAIL) | Mock heuristic gave partial credit to "just checking in"; below 0.70 threshold |
-| Training path | Path A (SFT) in methodology_rationale.md | Path B (ORPO + SimPO) | 40–60% trigger rate = inconsistency, not capability gap; SFT teaches new behavior, not preference consistency |
-| Backbone model | `Qwen/Qwen2.5-0.5B-Instruct` | `unsloth/Qwen3-4B-bnb-4bit` | 0.5B too small; Qwen3.5 IDs don't exist on HuggingFace (404 error in Colab) |
-| LoRA alpha | 32 (2× r) | 16 (= r) | Unsloth Qwen3 guide: alpha == r |
-| LoRA dropout | 0.05 | 0 | Unsloth recommendation |
-| Qwen3 thinking | Not handled | `enable_thinking=False` | Qwen3 outputs `<think>` tokens by default; suppressed for sales emails |
-| seq length | 512 | 2048 | Unsloth guide + multi-constraint prompts exceed 512 tokens |
+| 1 | Gemini SDK deprecated | `google.generativeai` printed end-of-life warning | Migrated to `google.genai` SDK across all three files |
+| 2 | Wrong model ID | `gemini-2.0-flash` → `404 NOT_FOUND` "no longer available to new users" | Changed to `gemini-2.5-flash` everywhere |
+| 3 | JSON output truncated | `"Unterminated string starting at line 3 column 14"` — context field cut off mid-sentence | `max_output_tokens=400 → 1500`; added `thinking_budget=0` (thinking tokens were consuming output quota) |
+| 4 | Gemini 503 errors | `"This model is currently experiencing high demand"` | Added retry loop: 3 attempts, sleep 10s × attempt number on 503/429 |
+| 5 | Contamination checks FAIL after live generation | n-gram FAIL (11 violations) + embedding FAIL (27 pairs) | Root cause: Gemini generates unique context text per variant, so each of the 5 variants of the same seed was treated as an independent group and split across partitions. Fix: added `seed_id` field (S01–S18) to task metadata; updated `_profile_key()` to group by `seed_id` for multi_llm tasks |
+| 6 | Task ID collision (30 duplicates in filtered.jsonl) | Duplicate task IDs in train split — 127 lines but only 117 unique IDs | Adversarial tasks still used old range TB-0166–0200 which overlapped with expanded multi_llm TB-0106–0195. Fix: renumbered adversarial to TB-0196–0230; rebuilt filtered.jsonl via `judge_filter.py --mock` |
+| 7 | IRA Round 1 failed (κ=0.662) | Below κ=0.70 threshold on `tone_checker_fn` | Mock heuristic gave partial credit to "just checking in" and missed "My name is" opener. Fix: rewrote to two-tier system — tier-1 phrases = immediate FAIL. Round 2 achieved κ=1.000 |
+
+---
+
+### Act III — Training Path and Data Issues
+
+| # | Issue | Error / Symptom | Fix |
+|---|---|---|---|
+| 8 | Wrong training path documented | `methodology_rationale.md` argued for Path A (SFT) | Rewrote entirely for Path B — Week 10 40–60% trigger rate = inconsistency not capability gap; SFT teaches new behaviors, not preference consistency |
+| 9 | preference_pairs.jsonl not in GitHub | `[ERROR] preference_pairs.jsonl not found` in Colab | `.gitignore` had `training/training_data/path_b_dpo/*.jsonl` blocking it. Removed that rule; committed and pushed the file |
+
+---
+
+### Act IV — Model and Training Issues
+
+| # | Issue | Error / Symptom | Fix |
+|---|---|---|---|
+| 10 | Wrong initial backbone | `Qwen/Qwen2.5-0.5B-Instruct` — too small for nuanced tone tasks | Changed to `unsloth/Qwen3.5-4B-Instruct` |
+| 11 | Qwen3.5 model does not exist | `RuntimeError: Unsloth: No config file found` in Colab | `unsloth/Qwen3.5-4B-Instruct` does not exist on HuggingFace. Unsloth docs only showed 27B/35B examples. Fixed to `unsloth/Qwen3-4B-bnb-4bit` (confirmed working, 97K+ downloads/month) |
+| 12 | Qwen3 thinking mode | Training outputs would contain `<think>...</think>` tokens | Added `enable_thinking=False` to all `apply_chat_template()` calls; wrapped in try/except for older tokenizer versions |
+| 13 | LoRA config not aligned with Unsloth guide | `lora_alpha=32`, `lora_dropout=0.05`, missing `use_gradient_checkpointing`, missing `optim` | Per Unsloth Qwen3 guide: `alpha=16` (= r), `dropout=0`, `use_gradient_checkpointing="unsloth"`, `random_state=3407`, `optim="adamw_8bit"` |
+| 14 | `evaluation_strategy` deprecation warning | TRL printed deprecation warning | Renamed to `eval_strategy` |
+| 15 | `warmup_ratio` deprecation warning | `warmup_ratio is deprecated and will be removed in v5.2` in Colab log | Changed to `warmup_steps=10` |
+| 16 | CUDA OOM during ORPO backward pass | `torch.OutOfMemoryError: Tried to allocate 684.00 MiB. GPU 0 has 151.81 MiB free` at step 0 | Root cause: `max_length=2048` — ORPO holds chosen+rejected simultaneously, attention is O(n²). Fix: `max_length=512` (emails are <200 words), `batch_size=4→2`, `grad_accum=4→8` (effective batch stays 16) |
 
 ---
 
