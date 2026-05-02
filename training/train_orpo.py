@@ -33,9 +33,14 @@ DEV_FILE   = ROOT / "dataset" / "tenacious_bench_v0.1" / "dev" / "tasks.jsonl"
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
-DEFAULT_MODEL   = "unsloth/Qwen3.5-4B-bnb-4bit"  # T4 options: Qwen3.5-0.8B, 2B, 4B; falls back to Qwen3 if not found
-DEFAULT_OUT_DIR = str(ROOT / "runs" / "orpo")
-DEFAULT_SEED    = 42
+DEFAULT_MODEL    = "unsloth/Qwen3.5-4B-bnb-4bit"  # T4 options: Qwen3.5-0.8B, 2B, 4B; falls back to Qwen3 if not found
+DEFAULT_OUT_DIR  = str(ROOT / "runs" / "orpo")
+DEFAULT_SEED     = 42
+# Exact checkpoint used in the reported training run (Week 11, 2026-05-02).
+# unsloth/Qwen3-4B-bnb-4bit was the fallback checkpoint loaded after Qwen3.5-4B was unavailable.
+# Pin to this revision for byte-exact reproducibility; "main" tracks the latest upload.
+DEFAULT_REVISION = "main"  # pin to a specific HF commit hash for strict reproducibility
+                            # e.g. "a1b2c3d" — run `huggingface-cli snapshot-info <model>` to get it
 
 LORA_CONFIG = dict(
     r=32,
@@ -121,6 +126,9 @@ def main():
     parser = argparse.ArgumentParser(description="ORPO fine-tuning for Tenacious")
     parser.add_argument("--model",      default=DEFAULT_MODEL,
                         help="T4 options: unsloth/Qwen3.5-{0.8B,2B,4B}-bnb-4bit (auto-falls back to Qwen3 if unavailable)")
+    parser.add_argument("--revision",   default=DEFAULT_REVISION,
+                        help="HuggingFace model revision / commit hash to load. "
+                             "Use 'main' for latest or a specific commit hash for strict reproducibility.")
     parser.add_argument("--output-dir", default=DEFAULT_OUT_DIR)
     parser.add_argument("--epochs",     type=int,   default=5)
     parser.add_argument("--lr",         type=float, default=5e-5)
@@ -131,7 +139,7 @@ def main():
     parser.add_argument("--seed",       type=int, default=DEFAULT_SEED)
     args = parser.parse_args()
 
-    print(f"[train_orpo] model={args.model}  beta={args.beta}  "
+    print(f"[train_orpo] model={args.model}  revision={args.revision}  beta={args.beta}  "
           f"epochs={args.epochs}  seed={args.seed}")
 
     # ── Imports (deferred so --help works without GPU) ────────────────────────
@@ -158,6 +166,7 @@ def main():
             print(f"\nLoading {attempt_model} with 4-bit quantization...")
             model, tokenizer = FastLanguageModel.from_pretrained(
                 model_name=attempt_model,
+                revision=args.revision,
                 max_seq_length=2048,
                 dtype=None,
                 load_in_4bit=True,

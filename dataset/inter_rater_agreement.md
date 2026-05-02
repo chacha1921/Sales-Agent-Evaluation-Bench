@@ -16,7 +16,9 @@ All seven checker functions in the scoring evaluator are designed to return dete
 
 This is a non-negotiable condition. If triggered, results must not be finalized until the disagreement is resolved per §4.
 
-*Rationale: κ ≥ 0.70 is the "substantial agreement" threshold per Landis & Koch (1977). Below this, the LLM judge scores are unreliable enough that the weighted composite score cannot be trusted.*
+*Rationale for κ = 0.70 threshold:*
+
+*κ ≥ 0.70 is the "substantial agreement" boundary per Landis & Koch (1977), the most widely cited calibration standard in annotation studies. We chose 0.70 rather than a stricter threshold (e.g. 0.80) for two reasons: (1) the five deterministic dimensions (`signal_grounding_fn`, `banned_phrase_fn`, `cta_checker_fn`, `word_count_fn`, `pricing_mention_fn`) already achieve κ = 1.0 by construction, so the composite score is anchored by high-agreement dimensions; and (2) the two LLM-backed dimensions involve nuanced stylistic judgment where even expert human annotators rarely achieve κ > 0.85. A 0.70 floor ensures the LLM judge is not systematically wrong while remaining achievable for genuinely ambiguous language tasks. In practice, Round 2 reached κ = 1.000 on both dimensions after the two-tier rule fix, exceeding the threshold by a wide margin.*
 
 ---
 
