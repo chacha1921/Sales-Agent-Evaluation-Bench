@@ -4,6 +4,8 @@ Domain-specific evaluation benchmark for Tenacious's B2B sales agent. Built beca
 
 **Headline result:** ORPO fine-tuning on 381 preference pairs lifted held-out mean from **4.008 → 4.462 (+11.3%)**, Δ=+0.454, p=0.001, beating a prompt-engineered baseline by Δ=+0.290, p=0.021.
 
+**Published:** [Blog post](https://chalielijalem.substack.com/p/building-the-sales-evaluation-bench) | [τ²-Bench gap report (issue #287)](https://github.com/sierra-research/tau2-bench/issues/287)
+
 ---
 
 ## Status — Complete (2026-05-02)
@@ -109,7 +111,7 @@ print(f"Delta A: Δ={d['delta_a']['observed_delta']}  p={d['delta_a']['p_value']
 | Model card | [model_card.md](model_card.md) |
 | CEO/CFO memo | [memo.md](memo.md) |
 | Evidence graph | [evidence_graph.json](evidence_graph.json) |
-| Technical blog post | [blog_post.md](blog_post.md) |
+| Technical blog post | [blog_post.md](blog_post.md) — [Published on Substack](https://chalielijalem.substack.com/p/building-the-sales-evaluation-bench) |
 | Inter-rater agreement | [dataset/inter_rater_agreement.md](dataset/inter_rater_agreement.md) |
 | Contamination report | [generation/contamination_check.json](generation/contamination_check.json) |
 | τ²-Bench Week 10 baseline | [week10_artifacts/score_log.json](week10_artifacts/score_log.json) |
