@@ -1,51 +1,51 @@
 {
   "meta": {
-    "timestamp": "2026-05-01T23:28:37.690503+00:00",
+    "timestamp": "2026-05-02T11:20:41.719294+00:00",
     "winner_method": "orpo",
-    "adapter_path": "/Users/chalielijalem/Documents/Tenx_MCP/week11/Sales-Agent-Evaluation-Bench/runs/orpo/adapter",
-    "base_model": "unsloth/Qwen3.5-4B-Instruct",
-    "mock_mode": true,
+    "adapter_path": "runs/orpo/adapter",
+    "base_model": "unsloth/Qwen3-4B-bnb-4bit",
+    "mock_mode": false,
     "held_out_n": 32,
     "seed": 42
   },
   "arm_stats": {
     "week10_baseline": {
-      "mean": 1.9923,
-      "ci_lo": 1.7715,
-      "ci_hi": 2.2228,
+      "mean": 4.0078,
+      "ci_lo": 3.668,
+      "ci_hi": 4.3008,
       "n": 32
     },
     "prompt_engineered": {
-      "mean": 4.5547,
-      "ci_lo": 4.3594,
-      "ci_hi": 4.75,
+      "mean": 4.1719,
+      "ci_lo": 3.8867,
+      "ci_hi": 4.4492,
       "n": 32
     },
     "trained": {
-      "mean": 4.3809,
-      "ci_lo": 4.1777,
-      "ci_hi": 4.5977,
+      "mean": 4.4616,
+      "ci_lo": 4.1928,
+      "ci_hi": 4.7038,
       "n": 32
     }
   },
   "delta_a": {
     "description": "Trained model vs Week 10 baseline on held_out \u2014 PRIMARY",
     "required": "p < 0.05, delta > 0",
-    "observed_delta": 2.3886,
-    "ci_lo": 2.0351,
-    "ci_hi": 2.7382,
-    "p_value": 0.0,
+    "observed_delta": 0.4538,
+    "ci_lo": 0.153,
+    "ci_hi": 0.7865,
+    "p_value": 0.001,
     "significant": true,
     "n_bootstrap": 2000
   },
   "delta_b": {
     "description": "Trained model vs prompt-engineered baseline \u2014 no training",
     "interpretation": "Fail = prompt engineering alone sufficient; legitimate finding",
-    "observed_delta": -0.1738,
-    "ci_lo": -0.3691,
-    "ci_hi": 0.0234,
-    "p_value": 0.966,
-    "significant": false,
+    "observed_delta": 0.2898,
+    "ci_lo": 0.0117,
+    "ci_hi": 0.5827,
+    "p_value": 0.0205,
+    "significant": true,
     "n_bootstrap": 2000
   },
   "delta_c": {
@@ -57,57 +57,57 @@
     "tau2_week10_cost_per_sim_usd": 0.0199,
     "tau2_week10_p50_latency_s": 105.95,
     "tau2_source": "week10_artifacts/score_log.json (150 sims, 30 tasks, 5 trials/task)",
-    "tenacious_trained_mean": 4.3809,
+    "tenacious_trained_mean": 4.4616,
     "note": "Delta C is informational only. \u03c4\u00b2-Bench retail (pass@1=0.7267) measures task completion on retail simulations; Tenacious-Bench measures tone, signal grounding, and banned-phrase compliance on B2B sales tasks. Scores are not directly comparable. \u03c4\u00b2-Bench is not re-run this week \u2014 reusing on-file numbers per the Act IV specification."
   },
   "cost_pareto": {
     "week10_baseline": {
       "cost_per_task_usd": 0.0004,
-      "avg_latency_s": 0.25
+      "avg_latency_s": 4.619
     },
     "trained": {
       "cost_per_task_usd": 0.00024,
-      "avg_latency_s": 0.18
+      "avg_latency_s": 9.059
     },
     "note": "LoRA adapter adds ~0ms decode overhead on same GPU; cost reduction from using smaller adapter vs calling larger base model via API."
   },
   "failure_mode_breakdown": {
     "formulaic": {
-      "week10_baseline": 1.7708,
-      "prompt_eng": 4.5417,
-      "trained": 4.5833
+      "week10_baseline": 4.3125,
+      "prompt_eng": 4.2292,
+      "trained": 4.5625
     },
     "tone_drift": {
-      "week10_baseline": 1.8036,
-      "prompt_eng": 4.5536,
-      "trained": 4.317
+      "week10_baseline": 3.8482,
+      "prompt_eng": 4.4911,
+      "trained": 4.5268
     },
     "signal_missing": {
-      "week10_baseline": 1.7054,
-      "prompt_eng": 4.6786,
-      "trained": 4.4643
+      "week10_baseline": 4.5,
+      "prompt_eng": 4.1786,
+      "trained": 4.8929
     },
     "trajectory": {
-      "week10_baseline": 3.188,
-      "prompt_eng": 4.4,
-      "trained": 4.2
+      "week10_baseline": 3.4,
+      "prompt_eng": 3.2,
+      "trained": 3.5544
     }
   },
   "segment_breakdown": {
     "series_b": {
-      "week10_baseline": 1.8403,
-      "prompt_eng": 5.0,
-      "trained": 4.8889
+      "week10_baseline": 4.3889,
+      "prompt_eng": 4.5833,
+      "trained": 4.9167
     },
     "enterprise": {
-      "week10_baseline": 2.1251,
-      "prompt_eng": 4.15,
-      "trained": 4.15
+      "week10_baseline": 3.7,
+      "prompt_eng": 3.9,
+      "trained": 4.2098
     },
     "smb": {
-      "week10_baseline": 1.9141,
-      "prompt_eng": 4.8125,
-      "trained": 4.2423
+      "week10_baseline": 4.1562,
+      "prompt_eng": 4.2188,
+      "trained": 4.4219
     }
   }
 }

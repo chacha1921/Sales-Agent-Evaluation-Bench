@@ -1,0 +1,54 @@
+# ORPO Training Run Log
+method: ORPO
+model: unsloth/Qwen3.5-4B-bnb-4bit
+dry_run: False
+wall_time_s: 2587.7
+
+## Hyperparameters
+beta: 0.1
+epochs: 5
+learning_rate: 5e-05
+lora_r: 32
+lora_alpha: 32
+lora_dropout: 0
+batch_size: 2
+grad_accum: 8
+effective_batch: 16
+lr_scheduler: cosine
+warmup_steps: 10
+max_length: 512
+max_prompt_length: 256
+fp16: True
+seed: 42
+train_pairs: 342
+eval_pairs: 39
+
+## Loss Curve (step, train_loss, eval_loss)
+step=5  train_loss=4.482760620117188  eval_loss=
+step=10  train_loss=3.9094493865966795  eval_loss=
+step=15  train_loss=3.161931800842285  eval_loss=
+step=20  train_loss=2.7374162673950195  eval_loss=
+step=22  train_loss=  eval_loss=2.383631944656372
+step=25  train_loss=2.3458583831787108  eval_loss=
+step=30  train_loss=2.0464550018310548  eval_loss=
+step=35  train_loss=1.7656721115112304  eval_loss=
+step=40  train_loss=1.5245254516601563  eval_loss=
+step=44  train_loss=  eval_loss=1.2371031045913696
+step=45  train_loss=1.2950812339782716  eval_loss=
+step=50  train_loss=1.1609689712524414  eval_loss=
+step=55  train_loss=1.0831418991088868  eval_loss=
+step=60  train_loss=1.0167256355285645  eval_loss=
+step=65  train_loss=0.9582901954650879  eval_loss=
+step=66  train_loss=  eval_loss=0.9344789385795593
+step=70  train_loss=0.9160895347595215  eval_loss=
+step=75  train_loss=0.9137142181396485  eval_loss=
+step=80  train_loss=0.8924592971801758  eval_loss=
+step=85  train_loss=0.8473064422607421  eval_loss=
+step=88  train_loss=  eval_loss=0.8480058312416077
+step=90  train_loss=0.8355325698852539  eval_loss=
+step=95  train_loss=0.8557333946228027  eval_loss=
+step=100  train_loss=0.846007251739502  eval_loss=
+step=105  train_loss=0.8496367454528808  eval_loss=
+step=110  train_loss=0.7949669837951661  eval_loss=
+step=110  train_loss=  eval_loss=0.8357510566711426
+step=110  train_loss=1.601805608922785  eval_loss=

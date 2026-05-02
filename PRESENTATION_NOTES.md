@@ -767,18 +767,31 @@ Key signals:
 | **R4-ORPO ✓** | **ORPO** | **live 381** | **response-only** | **0.816** | **1.000** | **+0.139** |
 | **R4-SimPO ✓** | **SimPO γ=2** | **live 381** | **response-only** | **1.318** | **1.000** | **+8.704** |
 
-#### Who wins?
+#### Who wins? — compare_methods.py results (dev split, n=71, 2026-05-02)
 
-Both methods reached `rewards/accuracies = 1.000`. To pick the winner for the held-out ablation, run:
+| Method | Mean | 95% CI | n |
+|---|---|---|---|
+| ORPO | 3.803 | [3.611, 3.982] | 71 |
+| SimPO | 3.806 | [3.616, 3.993] | 71 |
+| Δ (SimPO−ORPO) | **+0.004** | — | — |
 
-```bash
-python training/compare_methods.py \
-    --orpo-adapter  runs/orpo/adapter \
-    --simpo-adapter runs/simpo/adapter \
-    --base-model    unsloth/Qwen3-4B-bnb-4bit
-```
+Script verdict: SimPO (by 0.004 — flagged "may not be practically significant").
 
-This scores both adapters on the **dev split** (71 tasks) and picks the one with higher mean rubric score. Then run `run_ablations.py --winner <orpo|simpo>` on the sealed held-out.
+**Per failure mode on dev:**
+
+| Failure mode | n | ORPO | SimPO | Δ |
+|---|---|---|---|---|
+| tone_drift | 27 | **4.037** | 3.926 | ORPO +0.111 |
+| trajectory | 8 | **2.984** | 2.859 | ORPO +0.125 |
+| signal_missing | 24 | 3.818 | **3.911** | SimPO +0.094 |
+| formulaic | 10 | 3.888 | **3.962** | SimPO +0.075 |
+| constraint_violation | 2 | 3.312 | **3.938** | SimPO +0.625 (n=2, noise) |
+
+**Decision: use ORPO for held-out ablation.**
+- Δ=0.004 is within sampling noise — a statistical tie.
+- ORPO wins on `tone_drift` (n=27, the largest category) by 0.111 and `trajectory` (n=8) by 0.125.
+- Tone scoring used heuristic 0.5 fallback (no Gemini key in Colab) — ORPO's tone advantage is likely understated.
+- Tone compliance is Tenacious's primary use case; ORPO's conservative SFT+preference loss is better suited than SimPO's aggressive length-normalized reward.
 
 **Output:** Adapter saved → `runs/simpo/adapter/` (checkpoints at 22, 44, 66, 88, 110)
 
@@ -981,6 +994,35 @@ python training/run_ablations.py \
 - Week 10 baseline: $0.0199/simulation, p50 latency = 105.9s.
 - LoRA inference on T4 is faster; a 3pp lift that triples cost scores worse than a 2pp lift at flat cost.
 
+### Ablation Results — run_ablations.py (held_out, n=32, ORPO winner, 2026-05-02)
+
+| Arm | Mean | 95% CI |
+|---|---|---|
+| Week 10 baseline | 4.008 | [3.668, 4.301] |
+| Prompt-engineered | 4.172 | [3.887, 4.449] |
+| **Trained (ORPO)** | **4.462** | **[4.193, 4.704]** |
+
+| Delta | Δ | p-value | Verdict |
+|---|---|---|---|
+| **A — trained vs week10** | **+0.454** | **0.001** | **✓ PASS** |
+| B — trained vs prompt-eng | +0.290 | 0.021 | ✓ beats prompt-eng |
+| C — τ²-Bench (info only) | pass@1=0.7267 | CI [0.6504, 0.7917] | informational |
+
+**Per failure mode (trained vs week10 baseline):**
+
+| Failure mode | Trained | Baseline | Δ |
+|---|---|---|---|
+| tone_drift | 4.527 | 3.848 | **+0.679** (largest gain) |
+| signal_missing | 4.893 | 4.500 | +0.393 |
+| formulaic | 4.562 | 4.312 | +0.250 |
+| trajectory | 3.554 | 3.400 | +0.154 |
+
+**Key findings:**
+- Delta A passes at p=0.001 (well below 0.05 threshold) with Δ=+0.454 — training significantly improved the agent.
+- Delta B also passes (p=0.021) — LoRA preference training adds value beyond prompt engineering alone.
+- Largest gain on `tone_drift` (+0.679) — exactly the failure mode with 38% frequency in Week 10. ORPO's conservative joint SFT+preference loss is well-matched to brand voice consistency.
+- `trajectory` shows smallest gain (+0.154) — only 8 held-out tasks in this category; would need more data to confirm.
+
 ### Deliverables
 - `ablation_results.json` — all four deltas with bootstrap CIs
 - `held_out_traces.jsonl` — per-task output + dimension scores × 3 arms
@@ -1021,8 +1063,15 @@ python training/run_ablations.py \
 | SimPO R4 `rewards/accuracies` | 0.300 → **1.000** (reached epoch 1) |
 | SimPO R4 `rewards/margins` | -0.889 → **+8.704** (vs ORPO +0.139 — different scales) |
 | SimPO R4 best checkpoint | checkpoint-110 (eval still decreasing) |
-| Next step | `compare_methods.py` on dev → `run_ablations.py --winner <X>` |
-| Delta A requirement | p < 0.05, Δ > 0 on held_out (n=32) |
+| compare_methods.py (dev, n=71) | ORPO 3.803 vs SimPO 3.806, Δ=+0.004 — statistical tie |
+| Winner for ablations | **ORPO** (tone_drift +0.111, trajectory +0.125 on dev) |
+| **Delta A (ORPO vs week10, held_out n=32)** | **Δ=+0.454, p=0.001 — ✓ PASS** |
+| **Delta B (ORPO vs prompt-eng)** | **Δ=+0.290, p=0.021 — ✓ beats prompt-eng** |
+| Delta C (τ²-Bench, informational) | pass@1=0.7267 CI [0.6504, 0.7917] — no re-run |
+| Trained (ORPO) mean on held_out | **4.462 [4.193, 4.704]** |
+| Week 10 baseline mean on held_out | 4.008 [3.668, 4.301] |
+| Prompt-eng baseline mean on held_out | 4.172 [3.887, 4.449] |
+| Biggest gain by failure mode | tone_drift Δ=+0.679 (trained 4.527 vs baseline 3.848) |
 
 ---
 

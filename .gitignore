@@ -21,6 +21,7 @@ training/training_data/path_c_prm/*.jsonl
 
 # Logs
 *.log
+!training_run.log
 wandb/
 runs/
 
