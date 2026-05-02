@@ -182,3 +182,13 @@ evidence_graph.json       Act V  — machine-readable claim → evidence index
 Dataset: **CC BY 4.0**.  
 Code: **MIT**.  
 Model adapter: **Apache 2.0** (inherits from Qwen3 base model).
+
+---
+
+## Credits
+
+- **Author & Dataset Design:** Chalie Lijalem — chalie@10academy.org (Tenx MCP Week 11)
+- **Base model:** Qwen3-4B (Alibaba Cloud) via [Unsloth](https://github.com/unslothai/unsloth)
+- **Training framework:** [TRL](https://github.com/huggingface/trl) (ORPO trainer), [PEFT](https://github.com/huggingface/peft)
+- **Dataset generation:** Gemini 2.5 Flash (Google), DeepSeek Chat (via OpenRouter)
+- **Evaluation infrastructure:** HuggingFace Hub, Google Colab (T4 GPU)
