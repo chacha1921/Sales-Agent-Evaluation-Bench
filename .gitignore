@@ -11,10 +11,10 @@ __pycache__/
 *.pyo
 .DS_Store
 
-# Training artifacts (large files)
+# Training artifacts — block large generated SFT pairs, allow preference pairs (needed in Colab)
 training/training_data/path_a_sft/*.jsonl
-training/training_data/path_b_dpo/*.jsonl
 training/training_data/path_c_prm/*.jsonl
+# path_b_dpo/preference_pairs.jsonl is intentionally tracked (254 pairs, needed for train_orpo.py)
 *.safetensors
 *.bin
 *.pt
