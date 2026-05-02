@@ -33,7 +33,7 @@ DEV_FILE   = ROOT / "dataset" / "tenacious_bench_v0.1" / "dev" / "tasks.jsonl"
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
-DEFAULT_MODEL   = "unsloth/Qwen3-4B-bnb-4bit"    # T4 options: Qwen3-0.6B, 1.7B, 4B (bnb-4bit loads faster)
+DEFAULT_MODEL   = "unsloth/Qwen3.5-4B-bnb-4bit"  # T4 options: Qwen3.5-0.8B, 2B, 4B; falls back to Qwen3 if not found
 DEFAULT_OUT_DIR = str(ROOT / "runs" / "orpo")
 DEFAULT_SEED    = 42
 
@@ -120,7 +120,7 @@ def to_hf_dataset(pairs: list, tokenizer):
 def main():
     parser = argparse.ArgumentParser(description="ORPO fine-tuning for Tenacious")
     parser.add_argument("--model",      default=DEFAULT_MODEL,
-                        help="T4 options: unsloth/Qwen3-{0.6B,1.7B,4B}-bnb-4bit")
+                        help="T4 options: unsloth/Qwen3.5-{0.8B,2B,4B}-bnb-4bit (auto-falls back to Qwen3 if unavailable)")
     parser.add_argument("--output-dir", default=DEFAULT_OUT_DIR)
     parser.add_argument("--epochs",     type=int,   default=5)
     parser.add_argument("--lr",         type=float, default=5e-5)
@@ -144,15 +144,35 @@ def main():
         print("Run: pip install unsloth trl datasets peft bitsandbytes")
         sys.exit(1)
 
-    # ── Load model ────────────────────────────────────────────────────────────
-    print(f"\nLoading {args.model} with 4-bit quantization...")
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=args.model,
-        max_seq_length=2048,
-        dtype=None,         # auto-detect (bf16 on A100, fp16 on T4)
-        load_in_4bit=True,
-    )
+    # ── Load model (with Qwen3.5 → Qwen3 fallback) ───────────────────────────
+    _FALLBACKS = {
+        "unsloth/Qwen3.5-4B-bnb-4bit":  "unsloth/Qwen3-4B-bnb-4bit",
+        "unsloth/Qwen3.5-2B-bnb-4bit":  "unsloth/Qwen3-1.7B-bnb-4bit",
+        "unsloth/Qwen3.5-0.8B-bnb-4bit": "unsloth/Qwen3-0.6B-bnb-4bit",
+    }
+    model_name = args.model
+    for attempt_model in [model_name, _FALLBACKS.get(model_name)]:
+        if attempt_model is None:
+            break
+        try:
+            print(f"\nLoading {attempt_model} with 4-bit quantization...")
+            model, tokenizer = FastLanguageModel.from_pretrained(
+                model_name=attempt_model,
+                max_seq_length=2048,
+                dtype=None,
+                load_in_4bit=True,
+            )
+            model_name = attempt_model
+            break
+        except Exception as e:
+            if attempt_model == model_name and _FALLBACKS.get(model_name):
+                print(f"  [WARN] {attempt_model} not available: {e}")
+                print(f"  Falling back to {_FALLBACKS[model_name]}...")
+            else:
+                print(f"[ERROR] Could not load model: {e}")
+                sys.exit(1)
     model = FastLanguageModel.get_peft_model(model, **LORA_CONFIG)
+    print(f"  Model: {model_name}")
     print(f"  LoRA params: r={LORA_CONFIG['r']}, alpha={LORA_CONFIG['lora_alpha']}, dropout={LORA_CONFIG['lora_dropout']}")
 
     # ── Load data ─────────────────────────────────────────────────────────────
