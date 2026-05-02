@@ -346,54 +346,72 @@ def main():
     tasks = [json.loads(l) for l in open(HELD_OUT) if l.strip()]
     print(f"  Held-out tasks: {len(tasks)}")
 
-    # ── Load models (live mode) ───────────────────────────────────────────────
-    trained_model = trained_tokenizer = base_model_obj = base_tokenizer = None
-    if not args.mock:
-        try:
-            from unsloth import FastLanguageModel
-            from peft import PeftModel
-            print(f"\nLoading base model {args.base_model}...")
-            base_model_obj, base_tokenizer = FastLanguageModel.from_pretrained(
-                model_name=args.base_model,
-                max_seq_length=2048, dtype=None, load_in_4bit=True,
-            )
-            adapter_abs = str(Path(adapter_path).resolve())
-            print(f"Loading trained adapter {adapter_abs}...")
-            trained_model = PeftModel.from_pretrained(base_model_obj, adapter_abs)
-            FastLanguageModel.for_inference(trained_model)
-            trained_tokenizer = base_tokenizer
-        except ImportError as e:
-            print(f"[ERROR] {e}. Use --mock for testing without GPU.")
-            sys.exit(1)
-
     # ── Generate outputs for all three arms ───────────────────────────────────
+    # Live mode: generate each arm in a separate pass so only one model is in
+    # GPU memory at a time. Avoids OOM from holding base + adapter simultaneously.
     print("\nGenerating outputs for all ablation arms...")
     arm_outputs = {"week10_baseline": [], "prompt_eng": [], "trained": []}
     arm_latencies = {"week10_baseline": [], "prompt_eng": [], "trained": []}
 
-    for i, task in enumerate(tasks):
-        if args.mock:
+    if args.mock:
+        for task in tasks:
             arm_outputs["week10_baseline"].append(mock_week10_output(task))
             arm_outputs["prompt_eng"].append(mock_prompt_eng_output(task))
             arm_outputs["trained"].append(mock_trained_output(task))
             arm_latencies["week10_baseline"].append(0.25)
             arm_latencies["prompt_eng"].append(0.28)
-            arm_latencies["trained"].append(0.18)   # LoRA inference is faster
-        else:
-            t_out, t_lat = live_trained_output(task, trained_model, trained_tokenizer)
-            b_out, b_lat = live_baseline_output(task, base_model_obj, base_tokenizer,
-                                                 SYSTEM_PROMPT)   # week10 = minimal prompt
-            pe_out, pe_lat = live_baseline_output(task, base_model_obj, base_tokenizer,
-                                                   PROMPT_ENG_SYSTEM)
-            arm_outputs["week10_baseline"].append(b_out)
-            arm_outputs["prompt_eng"].append(pe_out)
-            arm_outputs["trained"].append(t_out)
-            arm_latencies["week10_baseline"].append(b_lat)
-            arm_latencies["prompt_eng"].append(pe_lat)
-            arm_latencies["trained"].append(t_lat)
+            arm_latencies["trained"].append(0.18)
+    else:
+        try:
+            from unsloth import FastLanguageModel
+            import torch
+        except ImportError as e:
+            print(f"[ERROR] {e}. Use --mock for testing without GPU.")
+            sys.exit(1)
 
-        if (i + 1) % 8 == 0:
-            print(f"  Generated {i+1}/{len(tasks)} tasks")
+        adapter_abs = str(Path(adapter_path).resolve())
+
+        # Pass 1 — trained adapter
+        print(f"\n[Pass 1/3] Trained adapter ({adapter_abs})...")
+        t_model, t_tok = FastLanguageModel.from_pretrained(
+            model_name=adapter_abs,
+            max_seq_length=2048, dtype=None, load_in_4bit=True,
+        )
+        FastLanguageModel.for_inference(t_model)
+        for i, task in enumerate(tasks):
+            out, lat = live_trained_output(task, t_model, t_tok)
+            arm_outputs["trained"].append(out)
+            arm_latencies["trained"].append(lat)
+            if (i + 1) % 8 == 0:
+                print(f"  {i+1}/{len(tasks)}")
+        del t_model; torch.cuda.empty_cache()
+
+        # Pass 2 — week10 baseline (base model, minimal system prompt)
+        print(f"\n[Pass 2/3] Week-10 baseline ({args.base_model})...")
+        b_model, b_tok = FastLanguageModel.from_pretrained(
+            model_name=args.base_model,
+            max_seq_length=2048, dtype=None, load_in_4bit=True,
+        )
+        FastLanguageModel.for_inference(b_model)
+        for i, task in enumerate(tasks):
+            out, lat = live_baseline_output(task, b_model, b_tok, SYSTEM_PROMPT)
+            arm_outputs["week10_baseline"].append(out)
+            arm_latencies["week10_baseline"].append(lat)
+            if (i + 1) % 8 == 0:
+                print(f"  {i+1}/{len(tasks)}")
+
+        # Pass 3 — prompt-engineered baseline (same base model, detailed system prompt)
+        print(f"\n[Pass 3/3] Prompt-engineered baseline...")
+        for i, task in enumerate(tasks):
+            out, lat = live_baseline_output(task, b_model, b_tok, PROMPT_ENG_SYSTEM)
+            arm_outputs["prompt_eng"].append(out)
+            arm_latencies["prompt_eng"].append(lat)
+            if (i + 1) % 8 == 0:
+                print(f"  {i+1}/{len(tasks)}")
+        del b_model; torch.cuda.empty_cache()
+
+    if (len(tasks)) % 8 != 0:
+        print(f"  Generated {len(tasks)}/{len(tasks)} tasks")
 
     # ── Score all arms ────────────────────────────────────────────────────────
     print("\nScoring all ablation arms...")

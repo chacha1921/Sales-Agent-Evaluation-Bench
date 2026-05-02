@@ -96,14 +96,15 @@ def generate_outputs(tasks: list, adapter_path: str, base_model: str) -> list:
     # paths as HuggingFace Hub IDs and fails with HFValidationError.
     adapter_abs = str(Path(adapter_path).resolve())
     print(f"  Loading adapter from {adapter_abs}...")
+    # Load directly from the saved adapter directory. Unsloth reads adapter_config.json
+    # internally to locate the base model and applies LoRA weights automatically.
+    # Bypasses PeftModel.from_pretrained which mis-validates absolute local paths as Hub IDs.
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=base_model,
+        model_name=adapter_abs,
         max_seq_length=2048,
         dtype=None,
         load_in_4bit=True,
     )
-    from peft import PeftModel
-    model = PeftModel.from_pretrained(model, adapter_abs)
     FastLanguageModel.for_inference(model)
 
     outputs = []
