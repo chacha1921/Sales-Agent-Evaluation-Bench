@@ -79,32 +79,34 @@ def load_pairs(path: Path) -> list:
 
 
 def to_hf_dataset(pairs: list, tokenizer):
-    """Convert preference pairs to HuggingFace Dataset for ORPOTrainer."""
+    """Convert preference pairs to HuggingFace Dataset for ORPOTrainer.
+
+    TRL canonical format: prompt = formatted prompt with generation token appended,
+    chosen/rejected = response text ONLY (no prompt). This prevents prompt tokens from
+    dominating logps computation and causing logps/chosen == logps/rejected.
+    """
     from datasets import Dataset
 
-    def format_messages(messages: list, add_gen: bool = False) -> str:
-        # enable_thinking=False: disable Qwen3 <think> tokens for sales email generation
+    def fmt_prompt(messages: list) -> str:
+        # add_generation_prompt=True appends <|im_start|>assistant\n so the trainer
+        # knows exactly where the response begins when masking prompt tokens.
         try:
             return tokenizer.apply_chat_template(
                 messages, tokenize=False,
-                add_generation_prompt=add_gen,
+                add_generation_prompt=True,
                 enable_thinking=False,
             )
         except TypeError:
-            # older tokenizer versions don't have enable_thinking
             return tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=add_gen
+                messages, tokenize=False, add_generation_prompt=True
             )
 
     rows = []
     for p in pairs:
-        prompt_msgs   = p["prompt"]
-        chosen_msgs   = prompt_msgs + p["chosen"]
-        rejected_msgs = prompt_msgs + p["rejected"]
         rows.append({
-            "prompt":   format_messages(prompt_msgs),
-            "chosen":   format_messages(chosen_msgs),
-            "rejected": format_messages(rejected_msgs),
+            "prompt":   fmt_prompt(p["prompt"]),
+            "chosen":   p["chosen"][0]["content"],    # response text only
+            "rejected": p["rejected"][0]["content"],  # response text only
         })
 
     ds = Dataset.from_list(rows)

@@ -85,26 +85,32 @@ def load_pairs(path):
 
 
 def to_hf_dataset(pairs, tokenizer):
+    """TRL canonical format: prompt with generation token, response-only chosen/rejected.
+
+    Passing full conversations in chosen/rejected caused logps/chosen == logps/rejected
+    because shared prompt tokens (~70%) dominated the per-token average, giving zero
+    preference gradient. Response-only format fixes this.
+    """
     from datasets import Dataset
 
-    def fmt(messages, add_gen=False):
+    def fmt_prompt(messages):
         try:
             return tokenizer.apply_chat_template(
                 messages, tokenize=False,
-                add_generation_prompt=add_gen,
+                add_generation_prompt=True,
                 enable_thinking=False,
             )
         except TypeError:
             return tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=add_gen
+                messages, tokenize=False, add_generation_prompt=True
             )
 
     rows = []
     for p in pairs:
         rows.append({
-            "prompt":   fmt(p["prompt"]),
-            "chosen":   fmt(p["prompt"] + p["chosen"]),
-            "rejected": fmt(p["prompt"] + p["rejected"]),
+            "prompt":   fmt_prompt(p["prompt"]),
+            "chosen":   p["chosen"][0]["content"],    # response text only
+            "rejected": p["rejected"][0]["content"],  # response text only
         })
 
     ds = Dataset.from_list(rows)
