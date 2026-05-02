@@ -83,29 +83,81 @@ def score_output(output: str, task: dict) -> dict:
 
 # ── Generation ────────────────────────────────────────────────────────────────
 
+def _load_adapter(adapter_abs: str, base_model: str):
+    """Load base model + apply a saved LoRA adapter for inference.
+
+    Unsloth saves only adapter delta weights (adapter_config.json +
+    adapter_model.safetensors). Neither PeftModel.from_pretrained nor
+    FastLanguageModel.from_pretrained can load these directly in this
+    environment, so we do it in three explicit steps:
+      1. Load base model with Unsloth
+      2. Re-apply LoRA structure via FastLanguageModel.get_peft_model
+         using config read from adapter_config.json
+      3. Load saved delta weights via load_state_dict
+    """
+    import json, os
+    from unsloth import FastLanguageModel
+    from safetensors.torch import load_file as load_safetensors
+
+    # Diagnose directory contents on first call
+    if os.path.exists(adapter_abs):
+        print(f"  Adapter dir contents: {sorted(os.listdir(adapter_abs))}")
+    else:
+        raise FileNotFoundError(f"Adapter directory not found: {adapter_abs}")
+
+    cfg_path = os.path.join(adapter_abs, "adapter_config.json")
+    if not os.path.exists(cfg_path):
+        raise FileNotFoundError(
+            f"adapter_config.json missing from {adapter_abs}. "
+            "Re-save with model.save_pretrained() from a PEFT/Unsloth training run."
+        )
+    with open(cfg_path) as f:
+        cfg = json.load(f)
+
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name=base_model,
+        max_seq_length=2048, dtype=None, load_in_4bit=True,
+    )
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r                       = cfg["r"],
+        lora_alpha              = cfg["lora_alpha"],
+        target_modules          = cfg["target_modules"],
+        lora_dropout            = 0,
+        bias                    = cfg.get("bias", "none"),
+        use_gradient_checkpointing = False,
+        random_state            = 3407,
+    )
+
+    weights_st = os.path.join(adapter_abs, "adapter_model.safetensors")
+    weights_pt = os.path.join(adapter_abs, "adapter_model.bin")
+    if os.path.exists(weights_st):
+        sd = load_safetensors(weights_st)
+    elif os.path.exists(weights_pt):
+        import torch
+        sd = torch.load(weights_pt, map_location="cuda")
+    else:
+        raise FileNotFoundError(f"No adapter weights (safetensors/bin) in {adapter_abs}")
+
+    missing, unexpected = model.load_state_dict(sd, strict=False)
+    if unexpected:
+        print(f"  [WARN] {len(unexpected)} unexpected keys — adapter may not be fully applied")
+    FastLanguageModel.for_inference(model)
+    return model, tokenizer
+
+
 def generate_outputs(tasks: list, adapter_path: str, base_model: str) -> list:
     """Generate one output per task using a LoRA adapter."""
     try:
         from unsloth import FastLanguageModel
         import torch
-    except ImportError:
-        print("[ERROR] unsloth not installed. Use --mock for testing.")
+    except ImportError as e:
+        print(f"[ERROR] Missing dependency: {e}")
         sys.exit(1)
 
-    # Resolve to absolute path — PeftModel.from_pretrained treats relative
-    # paths as HuggingFace Hub IDs and fails with HFValidationError.
     adapter_abs = str(Path(adapter_path).resolve())
     print(f"  Loading adapter from {adapter_abs}...")
-    # Load directly from the saved adapter directory. Unsloth reads adapter_config.json
-    # internally to locate the base model and applies LoRA weights automatically.
-    # Bypasses PeftModel.from_pretrained which mis-validates absolute local paths as Hub IDs.
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=adapter_abs,
-        max_seq_length=2048,
-        dtype=None,
-        load_in_4bit=True,
-    )
-    FastLanguageModel.for_inference(model)
+    model, tokenizer = _load_adapter(adapter_abs, base_model)
 
     outputs = []
     for task in tasks:

@@ -371,12 +371,34 @@ def main():
 
         adapter_abs = str(Path(adapter_path).resolve())
 
-        # Pass 1 — trained adapter
+        # Pass 1 — trained adapter (load base + apply LoRA delta manually)
         print(f"\n[Pass 1/3] Trained adapter ({adapter_abs})...")
+        import json as _json, os as _os
+        from safetensors.torch import load_file as _load_sf
+        cfg_path = _os.path.join(adapter_abs, "adapter_config.json")
+        if not _os.path.exists(cfg_path):
+            print(f"[ERROR] adapter_config.json not found in {adapter_abs}")
+            print(f"  Dir contents: {sorted(_os.listdir(adapter_abs))}")
+            sys.exit(1)
+        with open(cfg_path) as _f:
+            _cfg = _json.load(_f)
         t_model, t_tok = FastLanguageModel.from_pretrained(
-            model_name=adapter_abs,
+            model_name=args.base_model,
             max_seq_length=2048, dtype=None, load_in_4bit=True,
         )
+        t_model = FastLanguageModel.get_peft_model(
+            t_model,
+            r=_cfg["r"], lora_alpha=_cfg["lora_alpha"],
+            target_modules=_cfg["target_modules"],
+            lora_dropout=0, bias=_cfg.get("bias", "none"),
+            use_gradient_checkpointing=False, random_state=3407,
+        )
+        _wt = _os.path.join(adapter_abs, "adapter_model.safetensors")
+        _wb = _os.path.join(adapter_abs, "adapter_model.bin")
+        if _os.path.exists(_wt):
+            t_model.load_state_dict(_load_sf(_wt), strict=False)
+        else:
+            t_model.load_state_dict(torch.load(_wb, map_location="cuda"), strict=False)
         FastLanguageModel.for_inference(t_model)
         for i, task in enumerate(tasks):
             out, lat = live_trained_output(task, t_model, t_tok)
