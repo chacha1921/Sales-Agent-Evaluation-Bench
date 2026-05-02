@@ -139,9 +139,44 @@ def _load_adapter(adapter_abs: str, base_model: str):
     else:
         raise FileNotFoundError(f"No adapter weights (safetensors/bin) in {adapter_abs}")
 
+    # Diagnose key format mismatch before loading
+    saved_lora = [k for k in sd if "lora" in k][:2]
+    model_lora = [k for k in model.state_dict() if "lora" in k][:2]
+    print(f"  Saved keys sample:  {saved_lora}")
+    print(f"  Model keys sample:  {model_lora}")
+
     missing, unexpected = model.load_state_dict(sd, strict=False)
-    if unexpected:
-        print(f"  [WARN] {len(unexpected)} unexpected keys — adapter may not be fully applied")
+    print(f"  Direct load — missing={len(missing)} unexpected={len(unexpected)}")
+
+    if unexpected and missing:
+        # PEFT may save keys without adapter name ("lora_A.weight") while the
+        # recreated model uses named adapters ("lora_A.default.weight"). Try both
+        # directions of remapping to find the one that resolves the mismatch.
+        saved_sample = list(sd.keys())[0]
+        model_sample = [k for k in model.state_dict() if "lora" in k][0]
+
+        # Direction 1: add .default. (saved without name, model has name)
+        if ".default." in model_sample and ".default." not in saved_sample:
+            sd_remap = {}
+            for k, v in sd.items():
+                new_k = k.replace(".lora_A.weight", ".lora_A.default.weight") \
+                          .replace(".lora_B.weight", ".lora_B.default.weight") \
+                          .replace(".lora_embedding_A", ".lora_embedding_A.default") \
+                          .replace(".lora_embedding_B", ".lora_embedding_B.default")
+                sd_remap[new_k] = v
+        # Direction 2: remove .default. (saved with name, model without)
+        elif ".default." in saved_sample and ".default." not in model_sample:
+            sd_remap = {k.replace(".default.", "."): v for k, v in sd.items()}
+        else:
+            sd_remap = sd
+
+        missing2, unexpected2 = model.load_state_dict(sd_remap, strict=False)
+        print(f"  After remap  — missing={len(missing2)} unexpected={len(unexpected2)}")
+        if len(unexpected2) < len(unexpected):
+            print("  ✓ Remapped keys applied successfully")
+        else:
+            print("  [WARN] Remap did not improve match — check key formats above")
+
     FastLanguageModel.for_inference(model)
     return model, tokenizer
 

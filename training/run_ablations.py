@@ -395,10 +395,23 @@ def main():
         )
         _wt = _os.path.join(adapter_abs, "adapter_model.safetensors")
         _wb = _os.path.join(adapter_abs, "adapter_model.bin")
-        if _os.path.exists(_wt):
-            t_model.load_state_dict(_load_sf(_wt), strict=False)
-        else:
-            t_model.load_state_dict(torch.load(_wb, map_location="cuda"), strict=False)
+        _sd = _load_sf(_wt) if _os.path.exists(_wt) else torch.load(_wb, map_location="cuda")
+        _saved_s = [k for k in _sd if "lora" in k][:1]
+        _model_s = [k for k in t_model.state_dict() if "lora" in k][:1]
+        print(f"  Saved key sample: {_saved_s}")
+        print(f"  Model key sample: {_model_s}")
+        _miss, _unex = t_model.load_state_dict(_sd, strict=False)
+        if _unex and _miss:
+            _s0 = list(_sd.keys())[0]
+            _m0 = [k for k in t_model.state_dict() if "lora" in k][0]
+            if ".default." in _m0 and ".default." not in _s0:
+                _sd = {k.replace(".lora_A.weight", ".lora_A.default.weight")
+                        .replace(".lora_B.weight", ".lora_B.default.weight"): v
+                       for k, v in _sd.items()}
+            elif ".default." in _s0 and ".default." not in _m0:
+                _sd = {k.replace(".default.", "."): v for k, v in _sd.items()}
+            _miss2, _unex2 = t_model.load_state_dict(_sd, strict=False)
+            print(f"  After remap — missing={len(_miss2)} unexpected={len(_unex2)}")
         FastLanguageModel.for_inference(t_model)
         for i, task in enumerate(tasks):
             out, lat = live_trained_output(task, t_model, t_tok)
