@@ -1,0 +1,204 @@
+{
+  "schema_version": "1.0",
+  "project": "Tenacious-Bench v0.1",
+  "generated": "2026-05-02",
+  "claims": [
+    {
+      "id": "C01",
+      "claim": "τ²-Bench retail (pass@1=0.7267) fails to surface five categories of Tenacious-specific failure",
+      "category": "benchmark_gap",
+      "evidence": [
+        {
+          "file": "audit/audit_memo.md",
+          "description": "Five gap analyses with trace-level examples showing τ²-Bench PASS / Tenacious FAIL divergence"
+        },
+        {
+          "file": "week10_artifacts/trace_log.jsonl",
+          "description": "Raw Week 10 agent traces showing failure instances"
+        },
+        {
+          "file": "week10_artifacts/score_log.json",
+          "key": "pass_at_1",
+          "value": 0.7267,
+          "ci_95": [0.6504, 0.7917]
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "claim": "Tenacious-Bench v0.1 contains 230 tasks across 5 failure modes, 3 segments, 4 authoring modes",
+      "category": "dataset_properties",
+      "evidence": [
+        {
+          "file": "dataset/datasheet.md",
+          "description": "Gebru-format datasheet with full property table"
+        },
+        {
+          "file": "dataset/tenacious_bench_v0.1/train/tasks.jsonl",
+          "description": "127 training tasks"
+        },
+        {
+          "file": "dataset/tenacious_bench_v0.1/dev/tasks.jsonl",
+          "description": "71 dev tasks"
+        },
+        {
+          "description": "32 sealed held-out tasks (gitignored — not pushed)"
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "claim": "Dataset passes all three contamination checks (n-gram, embedding similarity, time-shift)",
+      "category": "dataset_quality",
+      "evidence": [
+        {
+          "file": "generation/contamination_check.json",
+          "description": "Machine output of all three checks: n-gram PASS, embedding PASS, time-shift PASS"
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "claim": "Inter-rater agreement κ=1.000 on tone_checker_fn after two-tier rule fix",
+      "category": "dataset_quality",
+      "evidence": [
+        {
+          "file": "dataset/inter_rater_agreement.md",
+          "description": "IRA protocol: Round 1 κ=0.662 (fail), Round 2 κ=1.000 after tier-1 rule change"
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "claim": "ORPO preference learning activated at Round 4 (response-only format fix)",
+      "category": "training",
+      "evidence": [
+        {
+          "file": "training_run.log",
+          "description": "Full hyperparameter log and loss curve for ORPO R4"
+        },
+        {
+          "description": "rewards/accuracies rose from 0.2625 to 1.000 by epoch 2",
+          "metric": "rewards/accuracies",
+          "value_start": 0.2625,
+          "value_end": 1.0
+        },
+        {
+          "description": "rewards/margins rose from -0.056 to +0.139",
+          "metric": "rewards/margins",
+          "value_start": -0.056,
+          "value_end": 0.139
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "claim": "Trained ORPO adapter improves Tenacious-Bench held-out mean by +0.454 vs Week 10 baseline (p=0.001)",
+      "category": "evaluation",
+      "evidence": [
+        {
+          "file": "ablation_results.json",
+          "key": "delta_a",
+          "observed_delta": 0.4538,
+          "ci_lo": 0.153,
+          "ci_hi": 0.7865,
+          "p_value": 0.001,
+          "significant": true,
+          "n_bootstrap": 2000,
+          "n_tasks": 32
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "claim": "Trained adapter beats prompt-engineered baseline on same backbone (Delta B, p=0.021)",
+      "category": "evaluation",
+      "evidence": [
+        {
+          "file": "ablation_results.json",
+          "key": "delta_b",
+          "observed_delta": 0.2898,
+          "ci_lo": 0.0117,
+          "ci_hi": 0.5827,
+          "p_value": 0.0205,
+          "significant": true,
+          "n_bootstrap": 2000,
+          "n_tasks": 32
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "claim": "Largest gain on tone_drift failure mode (+0.679), smallest on trajectory (+0.154)",
+      "category": "evaluation",
+      "evidence": [
+        {
+          "file": "ablation_results.json",
+          "key": "failure_mode_breakdown",
+          "tone_drift_delta": 0.6786,
+          "signal_missing_delta": 0.3929,
+          "formulaic_delta": 0.25,
+          "trajectory_delta": 0.1544
+        },
+        {
+          "file": "held_out_traces.jsonl",
+          "description": "Per-task scoring traces for all 32 held-out tasks across 3 arms"
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "claim": "LoRA inference costs 40% less per task than base model API call ($0.00024 vs $0.0004)",
+      "category": "cost",
+      "evidence": [
+        {
+          "file": "ablation_results.json",
+          "key": "cost_pareto",
+          "baseline_cost_per_task_usd": 0.0004,
+          "trained_cost_per_task_usd": 0.00024,
+          "note": "Estimated — LoRA on-device vs API call pricing"
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "claim": "Dataset generation total cost $0.021 (Gemini Flash for multi-LLM + adversarial tasks)",
+      "category": "cost",
+      "evidence": [
+        {
+          "file": "training/cost_log.md",
+          "description": "Itemized cost log for all API calls across Acts II–IV"
+        }
+      ]
+    }
+  ],
+  "artifact_index": {
+    "dataset": {
+      "train": "dataset/tenacious_bench_v0.1/train/tasks.jsonl",
+      "dev": "dataset/tenacious_bench_v0.1/dev/tasks.jsonl",
+      "held_out": "SEALED — not in repo",
+      "schema": "dataset/schema.json",
+      "datasheet": "dataset/datasheet.md",
+      "banned_phrases": "dataset/banned_phrases.txt"
+    },
+    "evaluation": {
+      "scorer": "evaluation/scoring_evaluator.py",
+      "ablation_results": "ablation_results.json",
+      "held_out_traces": "held_out_traces.jsonl",
+      "ira_protocol": "dataset/inter_rater_agreement.md"
+    },
+    "training": {
+      "train_orpo": "training/train_orpo.py",
+      "train_simpo": "training/train_simpo.py",
+      "compare_methods": "training/compare_methods.py",
+      "run_ablations": "training/run_ablations.py",
+      "preference_pairs": "training/training_data/path_b_dpo/preference_pairs.jsonl",
+      "training_log": "training_run.log"
+    },
+    "baseline": {
+      "tau2_score_log": "week10_artifacts/score_log.json",
+      "audit_memo": "audit/audit_memo.md",
+      "failure_taxonomy": "week10_artifacts/failure_taxonomy.md"
+    }
+  }
+}
