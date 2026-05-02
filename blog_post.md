@@ -1,6 +1,6 @@
 # When 0.73 Is a Lie: Building a Sales-Specific Eval Bench from Production Failures
 
-*Technical blog post — Tenacious-Bench v0.1 | 2026-05-02*
+*Technical blog post — Tenacious-Bench v0.1 | 2026-05-02 | [Published on Substack](https://chalielijalem.substack.com/p/building-the-sales-evaluation-bench)*
 
 ---
 
