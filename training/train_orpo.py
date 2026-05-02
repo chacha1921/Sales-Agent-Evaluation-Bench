@@ -50,17 +50,17 @@ LORA_CONFIG = dict(
 
 ORPO_ARGS = dict(
     beta=0.1,              # ORPO odds-ratio weight (λ in the paper)
-    max_length=2048,
-    max_prompt_length=1024,
-    per_device_train_batch_size=4,
-    gradient_accumulation_steps=4,  # effective batch = 16
+    max_length=512,        # emails are <200 words; 2048 caused OOM on T4 4B
+    max_prompt_length=256,
+    per_device_train_batch_size=2,  # reduced from 4 to avoid OOM
+    gradient_accumulation_steps=8,  # effective batch = 16 (same as before)
     num_train_epochs=3,
     learning_rate=5e-5,
     optim="adamw_8bit",             # unsloth: 8-bit Adam saves memory
     lr_scheduler_type="cosine",
-    warmup_ratio=0.1,
+    warmup_steps=10,
     fp16=True,             # T4 does not support bf16
-    logging_steps=10,
+    logging_steps=5,
     save_strategy="epoch",
     eval_strategy="epoch",
     seed=DEFAULT_SEED,
