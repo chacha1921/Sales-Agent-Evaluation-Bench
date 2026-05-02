@@ -42,8 +42,8 @@ DEFAULT_OUT_DIR = str(ROOT / "runs" / "simpo")
 DEFAULT_SEED    = 42
 
 LORA_CONFIG = dict(
-    r=16,
-    lora_alpha=16,                  # unsloth: alpha == r
+    r=32,
+    lora_alpha=32,                  # unsloth: alpha == r
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                     "gate_proj", "up_proj", "down_proj"],
     lora_dropout=0,                 # unsloth: 0 preferred
@@ -55,12 +55,12 @@ LORA_CONFIG = dict(
 SIMPO_ARGS = dict(
     loss_type="simpo",
     beta=2.0,              # SimPO temperature β (scales reward)
-    simpo_gamma=1.0,       # target reward margin γ — key SimPO hyperparameter
+    simpo_gamma=2.0,       # target reward margin γ — increased from 1.0 for stronger separation
     max_length=512,
     max_prompt_length=256,
     per_device_train_batch_size=2,
     gradient_accumulation_steps=8,  # effective batch = 16
-    num_train_epochs=3,
+    num_train_epochs=5,
     learning_rate=5e-5,
     optim="adamw_8bit",
     lr_scheduler_type="cosine",
@@ -118,12 +118,12 @@ def main():
     parser = argparse.ArgumentParser(description="SimPO fine-tuning for Tenacious")
     parser.add_argument("--model",      default=DEFAULT_MODEL)
     parser.add_argument("--output-dir", default=DEFAULT_OUT_DIR)
-    parser.add_argument("--epochs",     type=int,   default=3)
+    parser.add_argument("--epochs",     type=int,   default=5)
     parser.add_argument("--lr",         type=float, default=5e-5)
     parser.add_argument("--beta",       type=float, default=2.0,
                         help="SimPO temperature β (default: 2.0)")
-    parser.add_argument("--gamma",      type=float, default=1.0,
-                        help="SimPO target reward margin γ (default: 1.0)")
+    parser.add_argument("--gamma",      type=float, default=2.0,
+                        help="SimPO target reward margin γ (default: 2.0)")
     parser.add_argument("--dry-run",    action="store_true")
     parser.add_argument("--seed",       type=int, default=DEFAULT_SEED)
     args = parser.parse_args()

@@ -6,32 +6,31 @@ Each training task gets:
   - chosen:   a rubric-compliant output (signal-led, no banned phrases, CTA present)
   - rejected: a deliberately corrupted output matching the task's failure_mode_tag
 
-Sources for chosen outputs:
-  1. SFT pairs variant 0 (from generate_sft_data.py --mock/--live)
-  2. Or regenerated live via --live flag
-
-Rejection strategies (one per failure_mode_tag):
-  tone_drift          → insert formulaic opener + 1-2 banned phrases
-  signal_missing      → strip signal reference, replace with generic pitch
-  formulaic           → add "My name is X and I work at Y" opener
-  trajectory          → use a response that ignores the prospect's last message
-  constraint_violation→ exceed word count OR inject pricing language
+Modes:
+  Mock (default): Python templates — fast, no API key, but token overlap ~90%
+                  (ORPO/SimPO preference loss gets no gradient signal)
+  Live (--live):  Gemini Flash writes genuinely diverse chosen + rejected outputs.
+                  Token overlap ~20-30% — activates full preference gradient.
+                  Cost: ~$0.03 for 254 pairs. Requires GOOGLE_API_KEY in .env.
 
 Output format (TRL/Unsloth ORPOTrainer / CPOTrainer compatible):
   {"prompt": [...messages...], "chosen": [...], "rejected": [...]}
 
 Usage:
-    python training/generate_preference_pairs.py
-    python training/generate_preference_pairs.py --also-dev   # include dev split (158+ pairs)
-    python training/generate_preference_pairs.py --n-rejected 2  # multiple rejected per task
+    python training/generate_preference_pairs.py              # mock (default)
+    python training/generate_preference_pairs.py --live       # Gemini Flash live
+    python training/generate_preference_pairs.py --live --n-rejected 3
+    python training/generate_preference_pairs.py --also-dev   # include dev split
     python training/generate_preference_pairs.py --seed 42
 """
 
 import argparse
 import json
+import os
 import random
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -175,6 +174,122 @@ def make_rejected(task: dict, chosen: str, variant: int = 0) -> str:
         )
 
 
+# ── Live generation (Gemini Flash) ────────────────────────────────────────────
+
+_FAILURE_MODE_INSTRUCTIONS = {
+    "tone_drift": (
+        "Write a sales email for the same prospect that deliberately VIOLATES Tenacious "
+        "brand rules. Start with 'I hope this email finds you well.' and include at least "
+        "two of these banned phrases somewhere in the body: leverage, synergy, best-in-class, "
+        "cutting-edge, game-changing, streamline your workflow. Still include [CALENDLY_LINK]."
+    ),
+    "signal_missing": (
+        "Write a completely generic sales pitch for the same prospect that IGNORES the "
+        "specific trigger signal entirely — do not mention it at all. Use filler openers "
+        "like 'I wanted to reach out' or 'just checking in'. Make it feel like a mass "
+        "blast that could be sent to anyone. Include [CALENDLY_LINK]."
+    ),
+    "formulaic": (
+        "Write a sales email for the same prospect that starts with a self-introduction "
+        "opener: 'My name is [name] and I work at Tenacious.' Then continue with a "
+        "generic pitch. Include [CALENDLY_LINK]."
+    ),
+    "trajectory": (
+        "Write a sales email for the same prospect that completely IGNORES any conversation "
+        "history, prior objection, or previous message from the prospect. Respond as if "
+        "this is a brand-new cold outreach — the first contact ever. Include [CALENDLY_LINK]."
+    ),
+    "constraint_violation": (
+        "Write a sales email for the same prospect that VIOLATES the word-count constraint "
+        "by writing at least 30 words over the limit. Also mention pricing somewhere "
+        "(e.g., 'Pricing starts at $X/month'). Include [CALENDLY_LINK]."
+    ),
+}
+
+
+def _call_gemini(client, system_prompt: str, user_prompt: str) -> str:
+    from google.genai import types as genai_types
+    for attempt in range(3):
+        try:
+            resp = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=user_prompt,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=0.8,
+                    max_output_tokens=512,
+                    thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+                ),
+            )
+            return resp.text.strip()
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(10 * (attempt + 1))
+            else:
+                raise e
+
+
+def live_generate_pair(task: dict, client, variant: int) -> tuple[str, str]:
+    """Call Gemini Flash twice: once for chosen (clean), once for rejected (failure mode)."""
+    ctx = task["input"]["context"]
+    task_type = task["input"]["task_type"]
+    constraints = task["input"].get("constraints", [])
+    constraint_str = "\n".join(f"- {c}" for c in constraints)
+    failure_mode = task["metadata"]["failure_mode_tag"]
+
+    base_user = f"""Write a {task_type.replace('_', ' ')} for this prospect.
+
+Context:
+{ctx}
+
+Constraints:
+{constraint_str}
+
+Write only the message body. No subject line unless constraints ask for one. No explanatory text."""
+
+    # Chosen: clean, rules-compliant output
+    chosen = _call_gemini(client, SYSTEM_PROMPT, base_user)
+    time.sleep(0.3)
+
+    # Rejected: deliberately bad version matching the failure mode
+    failure_instruction = _FAILURE_MODE_INSTRUCTIONS.get(
+        failure_mode,
+        "Write a generic, low-quality version that ignores the signal and uses clichés.",
+    )
+    rejected_user = f"""{failure_instruction}
+
+Context:
+{ctx}
+
+Constraints (word limit still applies unless you are testing constraint_violation):
+{constraint_str}
+
+Write only the message body. No explanatory text."""
+
+    rejected = _call_gemini(client, "", rejected_user)
+    return chosen, rejected
+
+
+def _init_gemini_client():
+    env_file = ROOT / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+    try:
+        from google import genai
+    except ImportError:
+        print("[ERROR] google-genai not installed. Run: pip install google-genai")
+        sys.exit(1)
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        print("[ERROR] GOOGLE_API_KEY not set in .env or environment.")
+        sys.exit(1)
+    return genai.Client(api_key=api_key)
+
+
 # ── Preference pair builder ───────────────────────────────────────────────────
 
 def build_prompt_messages(task: dict) -> list:
@@ -253,21 +368,24 @@ def process_tasks(tasks: list, chosen_map: dict, n_rejected: int) -> list:
 
 def main():
     parser = argparse.ArgumentParser(description="Generate preference pairs for ORPO/SimPO")
+    parser.add_argument("--live", action="store_true",
+                        help="Call Gemini Flash for diverse chosen+rejected outputs "
+                             "(requires GOOGLE_API_KEY in .env). Recommended for real training.")
     parser.add_argument("--also-dev", action="store_true",
-                        help="Include dev split tasks (adds ~63 tasks, reaches 158+ pairs)")
-    parser.add_argument("--n-rejected", type=int, default=1,
-                        help="Rejected variants per task (default: 1)")
+                        help="Include dev split tasks (adds ~63 tasks)")
+    parser.add_argument("--n-rejected", type=int, default=3,
+                        help="Rejected variants per task (default: 3 → 381+ pairs)")
     parser.add_argument("--seed", type=int, default=_DEFAULT_SEED)
     args = parser.parse_args()
 
     random.seed(args.seed)
-    print(f"[generate_preference_pairs] seed={args.seed}  "
+    mode = "live" if args.live else "mock"
+    print(f"[generate_preference_pairs] mode={mode}  seed={args.seed}  "
           f"also_dev={args.also_dev}  n_rejected={args.n_rejected}")
 
-    for f in [TRAIN_FILE]:
-        if not f.exists():
-            print(f"[ERROR] {f} not found.")
-            sys.exit(1)
+    if not TRAIN_FILE.exists():
+        print(f"[ERROR] {TRAIN_FILE} not found.")
+        sys.exit(1)
 
     tasks = [json.loads(l) for l in open(TRAIN_FILE) if l.strip()]
     print(f"  Train tasks: {len(tasks)}")
@@ -277,36 +395,54 @@ def main():
         tasks += dev_tasks
         print(f"  Dev tasks added: {len(dev_tasks)} → total: {len(tasks)}")
 
-    chosen_map = load_chosen_map(SFT_FILE)
-    print(f"  Chosen outputs loaded from SFT pairs: "
-          f"{sum(len(v) for v in chosen_map.values())} outputs "
-          f"for {len(chosen_map)} tasks")
-
-    pairs = process_tasks(tasks, chosen_map, args.n_rejected)
-
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    pairs = []
+    failed = 0
+
+    if args.live:
+        client = _init_gemini_client()
+        print(f"  Gemini Flash client ready — generating {len(tasks) * args.n_rejected} pairs...")
+        for i, task in enumerate(tasks):
+            for rej_idx in range(args.n_rejected):
+                try:
+                    chosen, rejected = live_generate_pair(task, client, rej_idx)
+                    pairs.append(build_pair(task, chosen, rejected, rej_idx))
+                    time.sleep(0.2)
+                except Exception as e:
+                    print(f"  [WARN] {task['task_id']} variant {rej_idx} failed: {e}")
+                    failed += 1
+            if (i + 1) % 10 == 0:
+                print(f"  {i + 1}/{len(tasks)} tasks done ({len(pairs)} pairs)")
+    else:
+        chosen_map = load_chosen_map(SFT_FILE)
+        print(f"  Chosen outputs from SFT pairs: "
+              f"{sum(len(v) for v in chosen_map.values())} for {len(chosen_map)} tasks")
+        pairs = process_tasks(tasks, chosen_map, args.n_rejected)
+
     with open(OUT_FILE, "w") as f:
         for pair in pairs:
             f.write(json.dumps(pair) + "\n")
 
-    stats = {
-        "timestamp":    datetime.utcnow().isoformat() + "Z",
-        "seed":         args.seed,
-        "n_rejected":   args.n_rejected,
-        "tasks_used":   len(tasks),
-        "total_pairs":  len(pairs),
-        "out_file":     str(OUT_FILE),
-        "failure_mode_breakdown": {},
-    }
     from collections import Counter
     mode_counts = Counter(p["metadata"]["failure_mode"] for p in pairs)
-    stats["failure_mode_breakdown"] = dict(mode_counts)
-
+    stats = {
+        "timestamp":              datetime.utcnow().isoformat() + "Z",
+        "mode":                   mode,
+        "seed":                   args.seed,
+        "n_rejected":             args.n_rejected,
+        "tasks_used":             len(tasks),
+        "tasks_failed":           failed,
+        "total_pairs":            len(pairs),
+        "out_file":               str(OUT_FILE),
+        "failure_mode_breakdown": dict(mode_counts),
+    }
     with open(STATS_FILE, "w") as f:
         json.dump(stats, f, indent=2)
 
-    print(f"\n[DONE] {len(pairs)} preference pairs → {OUT_FILE}")
+    print(f"\n[DONE] {len(pairs)} preference pairs ({mode}) → {OUT_FILE}")
     print(f"  Breakdown: {dict(mode_counts)}")
+    if failed:
+        print(f"  [WARN] {failed} pairs failed — check API quota or retry")
     print(f"\n  Next: python training/train_orpo.py")
     print(f"         python training/train_simpo.py")
     print(f"         python training/compare_methods.py")

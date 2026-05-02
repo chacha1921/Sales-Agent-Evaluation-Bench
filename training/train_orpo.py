@@ -38,8 +38,8 @@ DEFAULT_OUT_DIR = str(ROOT / "runs" / "orpo")
 DEFAULT_SEED    = 42
 
 LORA_CONFIG = dict(
-    r=16,
-    lora_alpha=16,                  # unsloth: alpha == r
+    r=32,
+    lora_alpha=32,                  # unsloth: alpha == r
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                     "gate_proj", "up_proj", "down_proj"],
     lora_dropout=0,                 # unsloth: 0 preferred
@@ -54,7 +54,7 @@ ORPO_ARGS = dict(
     max_prompt_length=256,
     per_device_train_batch_size=2,  # reduced from 4 to avoid OOM
     gradient_accumulation_steps=8,  # effective batch = 16 (same as before)
-    num_train_epochs=3,
+    num_train_epochs=5,
     learning_rate=5e-5,
     optim="adamw_8bit",             # unsloth: 8-bit Adam saves memory
     lr_scheduler_type="cosine",
@@ -120,7 +120,7 @@ def main():
     parser.add_argument("--model",      default=DEFAULT_MODEL,
                         help="T4 options: unsloth/Qwen3-{0.6B,1.7B,4B}-bnb-4bit")
     parser.add_argument("--output-dir", default=DEFAULT_OUT_DIR)
-    parser.add_argument("--epochs",     type=int,   default=3)
+    parser.add_argument("--epochs",     type=int,   default=5)
     parser.add_argument("--lr",         type=float, default=5e-5)
     parser.add_argument("--beta",       type=float, default=0.1,
                         help="ORPO odds-ratio weight λ (default: 0.1)")
