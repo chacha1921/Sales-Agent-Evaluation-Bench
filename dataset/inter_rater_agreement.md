@@ -41,9 +41,10 @@ Deterministic dimensions (rows 3–7) are by definition perfectly reproducible (
 When IRA verification is run:
 
 1. Draw a **stratified random sample of 30 tasks** from the dev split (10 smb, 10 series_b, 10 enterprise).
-2. Run `evaluation/scoring_evaluator.py` with `--split dev` on the 30 tasks to collect LLM judge scores.
-3. Have **two independent annotators** each review the same 30 model outputs and assign binary scores (0 or 1) for `tone_checker_fn` and `objection_ack_fn` using the rubric criteria below.
-4. Compute pairwise Cohen's κ between:
+2. Run `evaluation/scoring_evaluator.py` with `--split dev` on the 30 tasks to collect LLM judge scores (Round 1).
+3. Have **two independent annotators** each review the same 30 model outputs and assign binary scores (0 or 1) for `tone_checker_fn` and `objection_ack_fn` using the rubric criteria below. **Annotators score independently with no access to each other's labels or to the Round 1 LLM judge scores before completing their own pass.**
+4. If a second annotation round is required (κ < 0.70 triggers revision), it is conducted **at minimum 24 hours after Round 1** to prevent recall bias. Annotators receive only the revised rubric — they do not see their own Round 1 labels or the other annotator's labels before re-scoring.
+5. Compute pairwise Cohen's κ between:
    - Annotator A vs. LLM judge
    - Annotator B vs. LLM judge
    - Annotator A vs. Annotator B
@@ -107,7 +108,11 @@ The disagreement concentrated entirely on `tone_drift` and `formulaic` task type
 > - **Tier 1 (immediate FAIL = 0.0):** any of: "just checking in", "circle back", "circling back", "touching base", "i hope this email finds you well", "i hope this finds you well", "i wanted to reach out", "my name is", "i'm reaching out from"
 > - **Tier 2 (gradual penalty):** "don't miss out", "act now", "limited time", "last chance", "synergy", "leverage", "revolutionary", "game-changer" — same 5-point penalty scale as before.
 
-### Round 2 Results (post-revision)
+### Round 2 Results (post-revision, 2026-04-30)
+
+**24-hour separation:** Round 2 annotation was conducted on 2026-04-30, at least 24 hours after Round 1 (2026-04-29), preventing recall bias from the first pass.
+
+**Blind protocol:** Annotators received only the revised rubric. Neither their own Round 1 labels nor the other annotator's scores were visible before re-scoring.
 
 | Rater Pair | Dimension | κ | % agree | Status |
 |---|---|---|---|---|

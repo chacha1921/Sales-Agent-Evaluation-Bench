@@ -55,6 +55,15 @@ LOG_FILE     = ROOT / "generation" / "raw_tasks" / "judge_filter_log.jsonl"
 PROMPTS_DIR  = ROOT / "generation" / "prompts"
 FILTER_THRESHOLD = 3.5
 
+# Tier separation: dev-tier for bulk filtering, eval-tier only for calibration spot-checks.
+# Dev-tier (cheap/fast): used on all tasks. Eval-tier (independent family): used on a random
+# CALIBRATION_SAMPLE_RATE fraction to verify the dev-tier filter is not systematically wrong.
+DEV_TIER_MODEL        = "gemini/gemini-2.5-flash"   # bulk filtering — all tasks
+EVAL_TIER_MODEL       = "deepseek/deepseek-chat"     # calibration only — different family
+CALIBRATION_SAMPLE_RATE = 0.10                        # 10% of passed tasks re-judged by eval-tier
+CALIBRATION_AGREE_THRESHOLD = 0.80                    # flag run if agreement < 80%
+CALIBRATION_LOG_FILE  = ROOT / "generation" / "raw_tasks" / "calibration_log.jsonl"
+
 VALID_CHECKERS = {
     "signal_grounding_fn", "tone_checker_fn", "banned_phrase_fn",
     "cta_checker_fn", "word_count_fn", "pricing_mention_fn", "objection_ack_fn",
@@ -224,9 +233,77 @@ def get_judge_model(task: dict) -> str:
     return JUDGE_ROUTING.get(gen_model, "deepseek/deepseek-chat")
 
 
+# ── Calibration spot-check ────────────────────────────────────────────────────
+
+def run_calibration(passed_tasks: list, mock: bool, seed: int = 42) -> dict:
+    """Re-judge a random sample of passed tasks using EVAL_TIER_MODEL.
+
+    Compares pass/fail decisions between DEV_TIER_MODEL (bulk) and EVAL_TIER_MODEL
+    (spot-check). Logs per-task agreement and flags the run if overall agreement
+    falls below CALIBRATION_AGREE_THRESHOLD.
+
+    Returns a summary dict logged to calibration_log.jsonl.
+    """
+    random.seed(seed + 1)  # different seed from main filter for independent sampling
+    n_sample = max(1, int(len(passed_tasks) * CALIBRATION_SAMPLE_RATE))
+    sample = random.sample(passed_tasks, min(n_sample, len(passed_tasks)))
+
+    print(f"\n[calibration] eval-tier spot-check: n={len(sample)} "
+          f"({CALIBRATION_SAMPLE_RATE:.0%} of {len(passed_tasks)} passed tasks)")
+    print(f"  dev-tier model : {DEV_TIER_MODEL}")
+    print(f"  eval-tier model: {EVAL_TIER_MODEL}")
+
+    agree_count = 0
+    cal_logs = []
+    for task in sample:
+        dev_mean  = task["metadata"].get("judge_mean", 0.0)
+        dev_pass  = dev_mean >= FILTER_THRESHOLD
+
+        eval_scores = (mock_judge(task) if mock
+                       else live_judge(task, EVAL_TIER_MODEL))
+        eval_mean  = sum(eval_scores.values()) / len(eval_scores)
+        eval_pass  = eval_mean >= FILTER_THRESHOLD
+        agrees     = dev_pass == eval_pass
+        if agrees:
+            agree_count += 1
+
+        cal_logs.append({
+            "task_id":    task["task_id"],
+            "dev_mean":   round(dev_mean, 3),
+            "eval_mean":  round(eval_mean, 3),
+            "dev_pass":   dev_pass,
+            "eval_pass":  eval_pass,
+            "agree":      agrees,
+        })
+
+    agreement_rate = agree_count / len(sample) if sample else 1.0
+    status = "PASS" if agreement_rate >= CALIBRATION_AGREE_THRESHOLD else "FLAG"
+    summary = {
+        "n_sampled":      len(sample),
+        "n_agree":        agree_count,
+        "agreement_rate": round(agreement_rate, 3),
+        "threshold":      CALIBRATION_AGREE_THRESHOLD,
+        "status":         status,
+        "dev_tier":       DEV_TIER_MODEL,
+        "eval_tier":      EVAL_TIER_MODEL,
+        "tasks":          cal_logs,
+    }
+
+    CALIBRATION_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(CALIBRATION_LOG_FILE, "w") as f:
+        f.write(json.dumps(summary) + "\n")
+
+    print(f"  Agreement: {agree_count}/{len(sample)} ({agreement_rate:.0%}) — {status}")
+    if status == "FLAG":
+        print(f"  [WARN] Calibration below {CALIBRATION_AGREE_THRESHOLD:.0%} — "
+              f"review {CALIBRATION_LOG_FILE} before finalising dataset.")
+    return summary
+
+
 # ── Main filter loop ──────────────────────────────────────────────────────────
 
-def run_filter(mock: bool = True, verbose: bool = False, seed: int = 42):
+def run_filter(mock: bool = True, verbose: bool = False, seed: int = 42,
+               calibrate: bool = False):
     random.seed(seed)
     print(f"[judge_filter] seed={seed}  prompt=generation/prompts/judge_system_prompt.md")
 
@@ -302,20 +379,30 @@ def run_filter(mock: bool = True, verbose: bool = False, seed: int = 42):
         modes[m] = modes.get(m, 0) + 1
     print(f"  Mode breakdown: {modes}")
 
+    # Optional eval-tier calibration spot-check
+    if calibrate:
+        run_calibration(passed, mock=mock, seed=seed)
+
     return passed, failed
 
 
 def main():
     parser = argparse.ArgumentParser(description="LLM-as-a-judge task filter")
-    parser.add_argument("--mock",    action="store_true", default=True)
-    parser.add_argument("--live",    action="store_true", help="Overrides --mock")
-    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--mock",      action="store_true", default=True)
+    parser.add_argument("--live",      action="store_true", help="Overrides --mock")
+    parser.add_argument("--verbose",   action="store_true")
+    parser.add_argument("--calibrate", action="store_true",
+                        help=f"After bulk filter, re-judge {CALIBRATION_SAMPLE_RATE:.0%} "
+                             f"of passed tasks with eval-tier model ({EVAL_TIER_MODEL}) "
+                             f"and log agreement. Flags run if agreement < "
+                             f"{CALIBRATION_AGREE_THRESHOLD:.0%}.")
     parser.add_argument("--seed",    type=int, default=42,
                         help="Random seed for reproducibility (default: 42)")
     args = parser.parse_args()
     if args.live:
         args.mock = False
-    run_filter(mock=args.mock, verbose=args.verbose, seed=args.seed)
+    run_filter(mock=args.mock, verbose=args.verbose, seed=args.seed,
+               calibrate=args.calibrate)
 
 
 if __name__ == "__main__":
