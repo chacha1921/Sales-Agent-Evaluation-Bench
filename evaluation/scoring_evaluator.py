@@ -284,7 +284,7 @@ def _gemini_call(user_content: str, max_tokens: int = 20) -> str:
         contents=user_content,
         config=genai_types.GenerateContentConfig(temperature=0.0, max_output_tokens=max_tokens),
     )
-    return response.text.strip()
+    return (response.text or "").strip()
 
 
 def _llm_judge_binary(output: str, prompt: str) -> float:
