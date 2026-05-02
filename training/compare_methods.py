@@ -92,7 +92,10 @@ def generate_outputs(tasks: list, adapter_path: str, base_model: str) -> list:
         print("[ERROR] unsloth not installed. Use --mock for testing.")
         sys.exit(1)
 
-    print(f"  Loading adapter from {adapter_path}...")
+    # Resolve to absolute path — PeftModel.from_pretrained treats relative
+    # paths as HuggingFace Hub IDs and fails with HFValidationError.
+    adapter_abs = str(Path(adapter_path).resolve())
+    print(f"  Loading adapter from {adapter_abs}...")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=base_model,
         max_seq_length=2048,
@@ -100,7 +103,7 @@ def generate_outputs(tasks: list, adapter_path: str, base_model: str) -> list:
         load_in_4bit=True,
     )
     from peft import PeftModel
-    model = PeftModel.from_pretrained(model, adapter_path)
+    model = PeftModel.from_pretrained(model, adapter_abs)
     FastLanguageModel.for_inference(model)
 
     outputs = []

@@ -357,8 +357,9 @@ def main():
                 model_name=args.base_model,
                 max_seq_length=2048, dtype=None, load_in_4bit=True,
             )
-            print(f"Loading trained adapter {adapter_path}...")
-            trained_model = PeftModel.from_pretrained(base_model_obj, adapter_path)
+            adapter_abs = str(Path(adapter_path).resolve())
+            print(f"Loading trained adapter {adapter_abs}...")
+            trained_model = PeftModel.from_pretrained(base_model_obj, adapter_abs)
             FastLanguageModel.for_inference(trained_model)
             trained_tokenizer = base_tokenizer
         except ImportError as e:
