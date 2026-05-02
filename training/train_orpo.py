@@ -205,7 +205,7 @@ def main():
         lf.write(f"grad_accum: {ORPO_ARGS['gradient_accumulation_steps']}\n")
         lf.write(f"effective_batch: {ORPO_ARGS['per_device_train_batch_size'] * ORPO_ARGS['gradient_accumulation_steps']}\n")
         lf.write(f"lr_scheduler: {ORPO_ARGS['lr_scheduler_type']}\n")
-        lf.write(f"warmup_ratio: {ORPO_ARGS['warmup_ratio']}\n")
+        lf.write(f"warmup_steps: {ORPO_ARGS['warmup_steps']}\n")
         lf.write(f"max_length: {ORPO_ARGS['max_length']}\n")
         lf.write(f"max_prompt_length: {ORPO_ARGS['max_prompt_length']}\n")
         lf.write(f"fp16: {ORPO_ARGS['fp16']}\n")
